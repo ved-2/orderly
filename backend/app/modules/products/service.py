@@ -69,13 +69,13 @@ def get_retailer_catalogue(
 
     for product, brand_name in products:
         try:
-            price_quote = get_retailer_product_price(
+            _, price_record = get_retailer_product_price(
                 db=db,
                 retailer_id=retailer_id,
                 product_id=product.id,
             )
-            price = price_quote.price
-            gst_included = price_quote.gst_included
+            price = price_record.price
+            gst_included = price_record.gst_included
         except ValueError:
             price = None
             gst_included = None
