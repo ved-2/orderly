@@ -1,15 +1,13 @@
-
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import retailer_registration
-
+from app.api.v1.endpoints import retailer_registration, auth
+from app.modules.products.router import router as products_router
 
 api_router = APIRouter()
 
-from app.modules.products.router import router as products_router
-
-api_router.include_router(products_router)
 api_router.include_router(retailer_registration.router)
+api_router.include_router(products_router)
+api_router.include_router(auth.router)
 
 
 @api_router.get("/health", tags=["Health"])

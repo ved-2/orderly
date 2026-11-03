@@ -57,6 +57,24 @@ export default function RegisterPage() {
     pincode: "",
   });
 
+  async function redirectAfterLogin() {
+    try {
+      const profile = await apiRequest<{
+        retailer_id: string | null;
+      }>("/auth/me");
+
+      if (profile.retailer_id) {
+        window.location.replace("/retailer/dashboard");
+        return;
+      }
+
+      setStage("shop");
+    } catch (error) {
+      console.error("Unable to check retailer registration:", error);
+      setStage("shop");
+    }
+  }
+
   async function handleEmailAuth(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -69,7 +87,7 @@ export default function RegisterPage() {
         if (!firebaseUser.emailVerified) {
           setStage("verification");
         } else {
-          setStage("shop");
+          await redirectAfterLogin();
         }
       } else {
         await registerWithEmail(email, password);
@@ -94,7 +112,7 @@ export default function RegisterPage() {
       if (!firebaseUser.emailVerified) {
         setStage("verification");
       } else {
-        setStage("shop");
+        await redirectAfterLogin();
       }
     } catch (err) {
       setError(
