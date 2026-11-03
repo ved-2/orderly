@@ -24,6 +24,11 @@ from app.modules.schemes.models import (
     SchemeRetailer,
 )
 
+from app.modules.credit.models import (
+    CreditAccount,
+    CreditTransaction,
+)
+
 
 __all__ = [
     "User",
@@ -40,4 +45,6 @@ __all__ = [
 "Scheme",
 "SchemeRule",
 "SchemeRetailer",
+"CreditAccount",
+"CreditTransaction",
 ]
