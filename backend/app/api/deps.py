@@ -91,6 +91,59 @@ def get_current_user(
     return user
 
 
+def get_verified_firebase_identity(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
+    """
+    Verify Firebase identity without requiring an existing Orderly database user.
+    Used during registration.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication scheme.",
+        )
+
+    try:
+        decoded_token = auth.verify_id_token(
+            credentials.credentials,
+            app=get_firebase_app(),
+            check_revoked=True,
+        )
+    except (FirebaseError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+        )
+
+    firebase_uid = decoded_token.get("uid")
+    email = decoded_token.get("email")
+
+    if not firebase_uid or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Firebase account must have a valid email address.",
+        )
+
+    if not decoded_token.get("email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before registering.",
+        )
+
+    return {
+        "firebase_uid": firebase_uid,
+        "email": email.strip().lower(),
+    }
+
+
 def require_roles(*allowed_roles: str):
     def role_checker(
         current_user: User = Depends(get_current_user),

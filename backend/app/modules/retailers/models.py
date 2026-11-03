@@ -2,6 +2,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     String,
@@ -16,6 +18,13 @@ from app.db.base import Base
 
 class Retailer(Base):
     __tablename__ = "retailers"
+    __table_args__ = (
+        CheckConstraint(
+            "registration_status IN "
+            "('PENDING_REVIEW', 'ACTIVE', 'REJECTED', 'SUSPENDED')",
+            name="ck_retailer_registration_status",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -67,6 +76,19 @@ class Retailer(Base):
 
     is_active: Mapped[bool] = mapped_column(
         default=True,
+        nullable=False,
+    )
+
+    registration_status: Mapped[str] = mapped_column(
+        String(30),
+        default="PENDING_REVIEW",
+        nullable=False,
+        index=True,
+    )
+
+    duplicate_flag: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
         nullable=False,
     )
 

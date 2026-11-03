@@ -34,6 +34,7 @@ from app.modules.orders.models import (
     OrderItem,
     OrderStatusHistory,
 )
+from app.modules.pricing.default_price_models import DistributorProductPrice
 
 
 __all__ = [
@@ -56,4 +57,5 @@ __all__ = [
 "Order",
 "OrderItem",
 "OrderStatusHistory",
+"DistributorProductPrice",
 ]
