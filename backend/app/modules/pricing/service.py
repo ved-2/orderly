@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.products.models import Product
 from app.modules.pricing.models import RetailerProductPrice
+from app.modules.pricing.default_price_models import DistributorProductPrice
 
 
 CENT = Decimal("0.01")
@@ -77,45 +78,85 @@ def calculate_price_quote(
         total_amount=total_amount,
         gst_included=gst_included,
     )
-    
+
+
+def _find_active_price(
+    db: Session,
+    model,
+    product_id: UUID,
+    at: datetime,
+    retailer_id: UUID | None = None,
+):
+    statement = select(model).where(
+        model.product_id == product_id,
+        model.valid_from <= at,
+        or_(
+            model.valid_to.is_(None),
+            model.valid_to > at,
+        ),
+    )
+
+    if retailer_id is not None:
+        statement = statement.where(
+            model.retailer_id == retailer_id
+        )
+
+    statement = statement.order_by(model.valid_from.desc())
+
+    results = list(db.scalars(statement).all())
+
+    if len(results) > 1:
+        raise ValueError(
+            "Multiple active prices found. "
+            "Resolve overlapping price records."
+        )
+
+    return results[0] if results else None
+
+
 def get_retailer_product_price(
     db: Session,
     retailer_id: UUID,
     product_id: UUID,
     at: datetime | None = None,
-) -> tuple[Product, RetailerProductPrice]:
+) -> tuple[Product, RetailerProductPrice | DistributorProductPrice]:
 
     current_time = at or datetime.now(timezone.utc)
 
-    statement = (
-        select(Product, RetailerProductPrice)
-        .join(
-            RetailerProductPrice,
-            RetailerProductPrice.product_id == Product.id,
-        )
-        .where(
+    product = db.scalar(
+        select(Product).where(
             Product.id == product_id,
             Product.is_active.is_(True),
-            RetailerProductPrice.retailer_id == retailer_id,
-            RetailerProductPrice.valid_from <= current_time,
-            or_(
-                RetailerProductPrice.valid_to.is_(None),
-                RetailerProductPrice.valid_to > current_time,
-            ),
         )
-        .order_by(RetailerProductPrice.valid_from.desc())
     )
 
-    results = list(db.execute(statement).all())
+    if product is None:
+        raise ValueError("Product not found or inactive.")
 
-    if not results:
-        raise ValueError(
-            "No active price found for this retailer and product."
-        )
+    # Priority 1: Retailer-specific price.
+    retailer_price = _find_active_price(
+        db=db,
+        model=RetailerProductPrice,
+        product_id=product_id,
+        retailer_id=retailer_id,
+        at=current_time,
+    )
 
-    if len(results) > 1:
-        raise ValueError(
-            "Multiple active prices found. Resolve overlapping price records."
-        )
+    if retailer_price is not None:
+        return product, retailer_price
 
-    return results[0]
+    # Priority 2: Distributor default price.
+    default_price = _find_active_price(
+        db=db,
+        model=DistributorProductPrice,
+        product_id=product_id,
+        at=current_time,
+    )
+
+    if default_price is not None:
+        return product, default_price
+
+    raise ValueError(
+        "No active retailer-specific or distributor default price "
+        "is configured for this product."
+    )
