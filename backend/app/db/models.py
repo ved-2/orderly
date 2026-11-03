@@ -10,6 +10,14 @@ from app.modules.products.models import (
     ProductAlias,
 )
 
+from app.modules.pricing.models import RetailerProductPrice
+
+from app.modules.inventory.models import (
+    Warehouse,
+    Inventory,
+    InventoryTransaction,
+)
+
 
 __all__ = [
     "User",
@@ -19,4 +27,8 @@ __all__ = [
     "Brand",
     "Product",
     "ProductAlias",
+    "RetailerProductPrice",
+"Warehouse",
+"Inventory",
+"InventoryTransaction",
 ]
