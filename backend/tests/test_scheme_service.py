@@ -8,7 +8,20 @@ from app.modules.schemes.service import (
     calculate_slab_discount,
 )
 
+from uuid import uuid4
 
+from app.modules.schemes.service import get_eligible_scheme_rules
+
+def test_unsupported_scheme_quantity_unit():
+    with pytest.raises(ValueError, match="Unsupported quantity unit"):
+        get_eligible_scheme_rules(
+            db=None,
+            retailer_id=uuid4(),
+            product_id=uuid4(),
+            quantity_unit="PALLET",
+        )
+        
+        
 def test_buy_x_get_y_calculation():
     result = calculate_free_quantity(
         purchase_quantity=Decimal("10"),

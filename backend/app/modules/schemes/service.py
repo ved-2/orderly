@@ -1,5 +1,16 @@
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
+from datetime import datetime, timezone
+from uuid import UUID
+
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
+
+from app.modules.schemes.models import (
+    Scheme,
+    SchemeRule,
+    SchemeRetailer,
+)
 
 
 ZERO = Decimal("0")
@@ -121,3 +132,51 @@ def calculate_slab_discount(
     )
 
     return discount, net_amount
+  
+def get_eligible_scheme_rules(
+    db: Session,
+    retailer_id: UUID,
+    product_id: UUID,
+    quantity_unit: str,
+    at: datetime | None = None,
+) -> list[tuple[Scheme, SchemeRule]]:
+    """
+    Fetch active and eligible schemes for a retailer and product.
+
+    Does not apply or combine schemes.
+    """
+
+    if quantity_unit not in ("CASE", "PIECE"):
+        raise ValueError("Unsupported quantity unit.")
+
+    current_time = at or datetime.now(timezone.utc)
+
+    eligible_retailer_scheme = (
+        select(SchemeRetailer.scheme_id)
+        .where(SchemeRetailer.retailer_id == retailer_id)
+    )
+
+    statement = (
+        select(Scheme, SchemeRule)
+        .join(
+            SchemeRule,
+            SchemeRule.scheme_id == Scheme.id,
+        )
+        .where(
+            SchemeRule.product_id == product_id,
+            SchemeRule.quantity_unit == quantity_unit,
+            Scheme.is_active.is_(True),
+            Scheme.valid_from <= current_time,
+            Scheme.valid_to > current_time,
+            or_(
+                Scheme.applies_to_all_retailers.is_(True),
+                Scheme.id.in_(eligible_retailer_scheme),
+            ),
+        )
+        .order_by(
+            Scheme.code,
+            SchemeRule.tier_number,
+        )
+    )
+
+    return list(db.execute(statement).all())
