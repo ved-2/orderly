@@ -4,10 +4,19 @@ from app.modules.retailers.models import (
     RetailerUser,
     RetailerAssignment,
 )
+from app.modules.products.models import (
+    Brand,
+    Product,
+    ProductAlias,
+)
+
 
 __all__ = [
     "User",
     "Retailer",
     "RetailerUser",
     "RetailerAssignment",
+    "Brand",
+    "Product",
+    "ProductAlias",
 ]
