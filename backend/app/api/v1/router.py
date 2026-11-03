@@ -5,6 +5,10 @@ from app.api.v1.endpoints import retailer_registration
 
 
 api_router = APIRouter()
+
+from app.modules.products.router import router as products_router
+
+api_router.include_router(products_router)
 api_router.include_router(retailer_registration.router)
 
 
