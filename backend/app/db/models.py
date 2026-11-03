@@ -29,6 +29,12 @@ from app.modules.credit.models import (
     CreditTransaction,
 )
 
+from app.modules.orders.models import (
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+)
+
 
 __all__ = [
     "User",
@@ -47,4 +53,7 @@ __all__ = [
 "SchemeRetailer",
 "CreditAccount",
 "CreditTransaction",
+"Order",
+"OrderItem",
+"OrderStatusHistory",
 ]
