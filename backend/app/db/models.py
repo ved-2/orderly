@@ -18,6 +18,12 @@ from app.modules.inventory.models import (
     InventoryTransaction,
 )
 
+from app.modules.schemes.models import (
+    Scheme,
+    SchemeRule,
+    SchemeRetailer,
+)
+
 
 __all__ = [
     "User",
@@ -31,4 +37,7 @@ __all__ = [
 "Warehouse",
 "Inventory",
 "InventoryTransaction",
+"Scheme",
+"SchemeRule",
+"SchemeRetailer",
 ]
