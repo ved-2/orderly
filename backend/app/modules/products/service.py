@@ -1,6 +1,7 @@
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+from app.modules.inventory.models import Inventory
 from app.modules.products.models import Product, Brand
 from app.modules.retailers.models import RetailerUser, Retailer
 from app.modules.pricing.service import get_retailer_product_price
@@ -80,6 +81,16 @@ def get_retailer_catalogue(
             price = None
             gst_included = None
 
+        stock = db.execute(
+            select(
+                func.coalesce(func.sum(Inventory.quantity_on_hand), 0),
+                func.coalesce(func.sum(Inventory.quantity_reserved), 0),
+            ).where(Inventory.product_id == product.id)
+        ).one()
+        quantity_on_hand = stock[0]
+        quantity_reserved = stock[1]
+        quantity_available = quantity_on_hand - quantity_reserved
+
         items.append({
             "id": product.id,
             "sku": product.sku,
@@ -95,6 +106,9 @@ def get_retailer_catalogue(
             "gst_rate": product.gst_rate,
             "price": price,
             "gst_included": gst_included,
+            "quantity_on_hand": quantity_on_hand,
+            "quantity_reserved": quantity_reserved,
+            "quantity_available": quantity_available,
         })
 
     return {

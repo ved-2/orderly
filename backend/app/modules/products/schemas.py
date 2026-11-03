@@ -24,6 +24,10 @@ class CatalogueProductResponse(BaseModel):
     price: Decimal | None
     gst_included: bool | None
 
+    quantity_on_hand: Decimal
+    quantity_reserved: Decimal
+    quantity_available: Decimal
+
     model_config = ConfigDict(from_attributes=True)
 
 
