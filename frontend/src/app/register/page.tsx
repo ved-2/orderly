@@ -20,6 +20,7 @@ import {
   loginWithGoogle,
   refreshEmailVerification,
   resendVerificationEmail,
+  sendPasswordReset,
   logout,
 } from "@/lib/auth";
 
@@ -40,6 +41,8 @@ export default function RegisterPage() {
 
   const [stage, setStage] = useState<Stage>("account");
   const [isLogin, setIsLogin] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<RegistrationResult | null>(null);
@@ -56,6 +59,26 @@ export default function RegisterPage() {
     state: "Madhya Pradesh",
     pincode: "",
   });
+
+  async function handlePasswordReset(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    setResetSuccess(false);
+
+    try {
+      await sendPasswordReset(email);
+      setResetSuccess(true);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to send password reset email."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function redirectAfterLogin() {
     try {
@@ -228,16 +251,20 @@ export default function RegisterPage() {
             </p>
 
             <h1 className="text-3xl font-semibold tracking-tight">
-              {stage === "account" && (
-                isLogin ? "Welcome back." : "Register your shop."
-              )}
+              {isForgotPassword
+                ? "Reset your password."
+                : stage === "account" && (
+                    isLogin ? "Welcome back." : "Register your shop."
+                  )}
               {stage === "verification" && "Verify your email."}
               {stage === "shop" && "Tell us about your shop."}
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              {stage === "account" &&
-                "Create your account to access distributor products, prices and schemes."}
+              {isForgotPassword
+                ? "Enter your account email to receive a password reset link."
+                : stage === "account" &&
+                  "Create your account to access distributor products, prices and schemes."}
               {stage === "verification" &&
                 `We need to verify ${user?.email ?? email} before continuing.`}
               {stage === "shop" &&
@@ -255,7 +282,70 @@ export default function RegisterPage() {
           </div>
         )}
 
-        {stage === "account" && (
+        {stage === "account" && isForgotPassword ? (
+          <div className="space-y-5">
+            {resetSuccess ? (
+              <div className="space-y-4 rounded-md border border-emerald-200 bg-emerald-50 p-5">
+                <p className="text-sm font-medium text-emerald-900">
+                  Password reset link sent!
+                </p>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  We sent a reset link to <span className="font-semibold">{email}</span>. Please check your inbox and follow the instructions to reset your password.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotPassword(false);
+                    setResetSuccess(false);
+                    setError("");
+                  }}
+                  className="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  Return to sign in
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handlePasswordReset} className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Registered email address
+                  </label>
+                  <input
+                    className={inputClass}
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+
+                <button
+                  disabled={busy}
+                  className="flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {busy ? <Loader2 size={17} className="animate-spin" /> : null}
+                  Send reset link
+                  {!busy && <ArrowRight size={16} />}
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(false);
+                      setError("");
+                    }}
+                    className="text-xs font-semibold text-slate-700 underline underline-offset-4 hover:text-slate-900"
+                  >
+                    &larr; Back to sign in
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        ) : stage === "account" && (
           <div className="space-y-5">
             <form onSubmit={handleEmailAuth} className="space-y-4">
               <div>
@@ -274,9 +364,24 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Password
-                </label>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="block text-sm font-medium">
+                    Password
+                  </label>
+                  {isLogin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setError("");
+                        setResetSuccess(false);
+                      }}
+                      className="text-xs text-slate-600 underline underline-offset-2 hover:text-slate-900"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
                 <input
                   className={inputClass}
                   type="password"
@@ -322,6 +427,7 @@ export default function RegisterPage() {
                 onClick={() => {
                   setIsLogin(!isLogin);
                   setError("");
+                  setIsForgotPassword(false);
                 }}
               >
                 {isLogin ? "Create account" : "Sign in"}

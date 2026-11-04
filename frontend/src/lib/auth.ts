@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   reload,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -80,4 +81,12 @@ export async function refreshEmailVerification() {
 
 export async function logout() {
   await signOut(auth);
+}
+
+export async function sendPasswordReset(email: string) {
+  if (!email || !email.trim()) {
+    throw new Error("Please enter your email address.");
+  }
+
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase());
 }
