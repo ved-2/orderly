@@ -33,6 +33,14 @@ const adminModules = [
     action: "Open Order Desk &rarr;",
   },
   {
+    title: "Master Catalogue & Schemes",
+    description:
+      "Manage SKU specifications, wholesale pricing, depot stock levels, and promotional Buy-X-Get-Y / slab schemes.",
+    href: "/distributor/catalogue",
+    badge: "Master Data",
+    action: "Manage catalogue &rarr;",
+  },
+  {
     title: "Tally Accounting Export",
     description:
       "Generate and download Tally-compatible sales voucher CSV files for approved and dispatched orders.",
