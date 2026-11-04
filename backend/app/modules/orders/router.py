@@ -18,6 +18,7 @@ from app.modules.inventory.models import (
     Inventory,
     InventoryTransaction,
 )
+from app.modules.products.models import Product
 from app.modules.orders.models import (
     Order,
     OrderItem,
@@ -67,8 +68,13 @@ def list_orders(
         .order_by(OrderItem.created_at.asc())
     ).all()
 
+    product_ids = list({oi.product_id for oi in order_items})
+    prods = db.scalars(select(Product).where(Product.id.in_(product_ids))).all() if product_ids else []
+    prod_upc_map = {p.id: p.units_per_case for p in prods}
+
     items_by_order: dict = {}
     for order_item in order_items:
+        upc = prod_upc_map.get(order_item.product_id, 1)
         items_by_order.setdefault(order_item.order_id, []).append(
             {
                 "product_id": order_item.product_id,
@@ -76,6 +82,7 @@ def list_orders(
                 "sku": order_item.sku,
                 "quantity": order_item.quantity,
                 "quantity_unit": order_item.quantity_unit,
+                "units_per_case": upc,
                 "free_quantity": order_item.free_quantity,
                 "unit_price": order_item.unit_price,
                 "discount_amount": order_item.discount_amount,
@@ -372,6 +379,10 @@ def get_desk_order_detail(
         .order_by(OrderItem.created_at.asc())
     ).all()
 
+    item_prod_ids = list({oi.product_id for oi in order_items})
+    detail_prods = db.scalars(select(Product).where(Product.id.in_(item_prod_ids))).all() if item_prod_ids else []
+    detail_upc_map = {p.id: p.units_per_case for p in detail_prods}
+
     history_entries = db.scalars(
         select(OrderStatusHistory)
         .where(OrderStatusHistory.order_id == order.id)
@@ -424,6 +435,8 @@ def get_desk_order_detail(
                 "sku": item.sku,
                 "quantity": item.quantity,
                 "quantity_unit": item.quantity_unit,
+                "units_per_case": detail_upc_map.get(item.product_id, 1),
+                "case_price": float(item.unit_price) * detail_upc_map.get(item.product_id, 1),
                 "free_quantity": item.free_quantity,
                 "unit_price": float(item.unit_price),
                 "discount_amount": float(item.discount_amount),

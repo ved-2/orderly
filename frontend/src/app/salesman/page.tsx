@@ -234,7 +234,8 @@ export default function SalesmanPortalPage() {
 
   const estimatedSubtotal = cartEntries.reduce((acc, [prodId, qty]) => {
     const prod = catalogue.find((p) => p.id === prodId);
-    return acc + (prod ? prod.price * qty : 0);
+    const casePrice = prod ? prod.price * prod.units_per_case : 0;
+    return acc + casePrice * qty;
   }, 0);
 
   // 5. Submit Order (Online or Offline Queue)
@@ -270,7 +271,7 @@ export default function SalesmanPortalPage() {
             sku: prod ? prod.sku : "",
             quantity,
             quantity_unit: "CASE",
-            price: prod ? prod.price : 0,
+            price: prod ? prod.price * prod.units_per_case : 0,
           };
         }),
         customer_note: customerNote || null,
@@ -622,9 +623,11 @@ export default function SalesmanPortalPage() {
 
                         <div className="text-right">
                           <p className="font-mono text-sm font-bold text-gray-950">
-                            {formatCurrency(p.price)}
+                            {formatCurrency(p.price * p.units_per_case)}
                           </p>
-                          <span className="text-[10px] text-gray-400">per case</span>
+                          <p className="text-[10px] text-gray-500 font-mono">
+                            {formatCurrency(p.price)}/pc &bull; {p.units_per_case} pcs/cs
+                          </p>
                         </div>
                       </div>
 
@@ -826,11 +829,11 @@ export default function SalesmanPortalPage() {
                       <div>
                         <p className="font-semibold text-gray-900">{p.name}</p>
                         <p className="text-[11px] text-gray-500 font-mono">
-                          {quantity} cs &times; {formatCurrency(p.price)}
+                          {quantity} cs ({quantity * p.units_per_case} pcs) &times; {formatCurrency(p.price * p.units_per_case)}/cs
                         </p>
                       </div>
                       <div className="font-mono font-bold text-gray-950">
-                        {formatCurrency(p.price * quantity)}
+                        {formatCurrency(p.price * p.units_per_case * quantity)}
                       </div>
                     </div>
                   );

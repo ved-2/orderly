@@ -54,6 +54,8 @@ interface OrderItemData {
   quantity_unit: string;
   free_quantity: number;
   unit_price: number;
+  units_per_case?: number;
+  case_price?: number;
   discount_amount: number;
   tax_amount: number;
   line_total: number;
@@ -489,7 +491,12 @@ function OrderDetailContent() {
                           </p>
                         </td>
                         <td className="px-6 py-4 text-center font-mono text-sm text-gray-900">
-                          {item.quantity} {item.quantity_unit}
+                          <p>{item.quantity} {item.quantity_unit}</p>
+                          {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 && (
+                            <p className="text-[11px] text-gray-500 font-normal">
+                              ({item.quantity * item.units_per_case} pcs)
+                            </p>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-center">
                           {item.free_quantity > 0 ? (
@@ -500,8 +507,21 @@ function OrderDetailContent() {
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-right font-mono text-sm text-gray-700">
-                          {formatCurrency(item.unit_price)}
+                        <td className="px-6 py-4 text-right font-mono text-sm">
+                          {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 ? (
+                            <div>
+                              <p className="font-semibold text-gray-900">
+                                {formatCurrency(item.unit_price * item.units_per_case)} / cs
+                              </p>
+                              <p className="text-[11px] text-gray-500 font-normal">
+                                ({formatCurrency(item.unit_price)} / pc &bull; {item.units_per_case} pcs/cs)
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-gray-700">
+                              {formatCurrency(item.unit_price)} / pc
+                            </p>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-right font-mono font-medium text-gray-950">
                           {formatCurrency(item.line_total)}
