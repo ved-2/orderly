@@ -23,6 +23,15 @@ interface OrderDraftResponse {
   created_at: string;
 }
 
+interface OrderSubmissionResponse {
+  id: string;
+  order_number: string;
+  status: string;
+  submitted_at: string;
+  total_amount: number;
+  message: string;
+}
+
 export default function RetailerCheckoutPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
@@ -109,9 +118,28 @@ export default function RetailerCheckoutPage() {
         },
       );
 
+      if (createdOrder.status !== "DRAFT") {
+        throw new Error("Unexpected order status received from server.");
+      }
+
+      const submittedOrder =
+        await apiRequest<OrderSubmissionResponse>(
+          `/orders/${createdOrder.id}/submit`,
+          {
+            method: "POST",
+          },
+        );
+
+      if (submittedOrder.status !== "SUBMITTED") {
+        throw new Error("Order submission could not be confirmed.");
+      }
+
       clearCart();
       setItems([]);
-      setOrder(createdOrder);
+      setOrder({
+        ...createdOrder,
+        status: submittedOrder.status,
+      });
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -165,7 +193,7 @@ export default function RetailerCheckoutPage() {
       {order ? (
         <section className="border border-green-200 bg-white p-5 sm:p-6">
           <p className="text-sm font-medium text-green-700">
-            Order draft created
+            Order submitted successfully
           </p>
           <h2 className="mt-2 text-xl font-semibold text-gray-950">
             {order.order_number}
@@ -261,7 +289,7 @@ export default function RetailerCheckoutPage() {
               disabled={!retailerId || isSubmitting}
               className="mt-5 w-full bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400"
             >
-              {isSubmitting ? "Submitting order..." : "Submit order"}
+              {isSubmitting ? "Submitting order..." : "Place order"}
             </button>
           </section>
         </form>
