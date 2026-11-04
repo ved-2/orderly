@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.modules.inventory.models import Inventory
 from app.modules.products.models import Product, Brand
 from app.modules.retailers.models import RetailerUser, Retailer
-from app.modules.pricing.service import get_retailer_product_price
+from app.modules.pricing.service import get_retailer_product_prices
 
 
 def get_retailer_catalogue(
@@ -66,29 +66,40 @@ def get_retailer_catalogue(
         .limit(page_size)
     ).all()
 
+    product_ids = [product.id for product, _ in products]
+    prices_by_product = get_retailer_product_prices(
+        db=db,
+        retailer_id=retailer_id,
+        product_ids=product_ids,
+    )
+    inventory_rows = db.execute(
+        select(
+            Inventory.product_id,
+            func.coalesce(func.sum(Inventory.quantity_on_hand), 0),
+            func.coalesce(func.sum(Inventory.quantity_reserved), 0),
+        )
+        .where(Inventory.product_id.in_(product_ids))
+        .group_by(Inventory.product_id)
+    ).all() if product_ids else []
+    inventory_by_product = {
+        product_id: (quantity_on_hand, quantity_reserved)
+        for product_id, quantity_on_hand, quantity_reserved in inventory_rows
+    }
+
     items = []
 
     for product, brand_name in products:
-        try:
-            _, price_record = get_retailer_product_price(
-                db=db,
-                retailer_id=retailer_id,
-                product_id=product.id,
-            )
+        price_record = prices_by_product.get(product.id)
+        if price_record is not None:
             price = price_record.price
             gst_included = price_record.gst_included
-        except ValueError:
+        else:
             price = None
             gst_included = None
 
-        stock = db.execute(
-            select(
-                func.coalesce(func.sum(Inventory.quantity_on_hand), 0),
-                func.coalesce(func.sum(Inventory.quantity_reserved), 0),
-            ).where(Inventory.product_id == product.id)
-        ).one()
-        quantity_on_hand = stock[0]
-        quantity_reserved = stock[1]
+        quantity_on_hand, quantity_reserved = inventory_by_product.get(
+            product.id, (0, 0)
+        )
         quantity_available = quantity_on_hand - quantity_reserved
 
         items.append({

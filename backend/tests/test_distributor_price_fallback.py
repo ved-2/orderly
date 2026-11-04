@@ -6,7 +6,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.modules.pricing.service import get_retailer_product_price
+from app.modules.pricing.service import (
+    get_retailer_product_price,
+    get_retailer_product_prices,
+)
 
 
 def make_product(active=True):
@@ -160,3 +163,61 @@ def test_expired_price_is_not_returned_by_resolver():
     )
 
     assert db.scalars.call_count == 2
+
+
+def test_batch_price_resolver_uses_retailer_price_before_default():
+    retailer_id = uuid4()
+    retailer_product_id = uuid4()
+    default_product_id = uuid4()
+    retailer_price = SimpleNamespace(
+        product_id=retailer_product_id,
+        price="90.00",
+        gst_included=True,
+    )
+    default_price = SimpleNamespace(
+        product_id=default_product_id,
+        price="100.00",
+        gst_included=False,
+    )
+    db = MagicMock()
+    retailer_result = MagicMock()
+    retailer_result.all.return_value = [retailer_price]
+    default_result = MagicMock()
+    default_result.all.return_value = [default_price]
+    db.scalars.side_effect = [retailer_result, default_result]
+
+    prices = get_retailer_product_prices(
+        db,
+        retailer_id,
+        [retailer_product_id, default_product_id],
+    )
+
+    assert prices == {
+        retailer_product_id: retailer_price,
+        default_product_id: default_price,
+    }
+    assert db.scalars.call_count == 2
+
+
+def test_batch_price_resolver_does_not_fallback_on_ambiguous_retailer_price():
+    product_id = uuid4()
+    retailer_prices = [
+        SimpleNamespace(product_id=product_id),
+        SimpleNamespace(product_id=product_id),
+    ]
+    db = MagicMock()
+    result = MagicMock()
+    result.all.return_value = retailer_prices
+    db.scalars.return_value = result
+
+    prices = get_retailer_product_prices(db, uuid4(), [product_id])
+
+    assert prices == {}
+    db.scalars.assert_called_once()
+
+
+def test_batch_price_resolver_returns_empty_for_no_products():
+    db = MagicMock()
+
+    assert get_retailer_product_prices(db, uuid4(), []) == {}
+    db.scalars.assert_not_called()

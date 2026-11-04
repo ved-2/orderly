@@ -15,6 +15,7 @@ import {
 
 import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
+import { CatalogueLoading } from "@/components/retailer/catalogue-loading";
 import {
   addToCart,
   getCart,
@@ -57,6 +58,7 @@ export default function RetailerCataloguePage() {
 
   const [products, setProducts] = useState<CatalogueProduct[]>([]);
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [page, setPage] = useState(1);
@@ -69,39 +71,43 @@ export default function RetailerCataloguePage() {
 
   const pageSize = 20;
 
+  const loadCatalogue = useCallback(async () => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+
+    if (search.trim()) params.set("search", search.trim());
+    if (category) params.set("category", category);
+
+    return apiRequest<CatalogueResponse>(
+      `/products/catalogue?${params.toString()}`
+    );
+  }, [page, search, category]);
+
+  const applyCatalogueResponse = useCallback((response: CatalogueResponse) => {
+    setProducts(
+      response.items.map((product) => ({
+        ...product,
+        is_in_stock: product.quantity_available > 0,
+      })),
+    );
+    setTotal(response.total);
+
+    setCategories((previous) =>
+      Array.from(
+        new Set([
+          ...previous,
+          ...response.items.map((product) => product.category),
+        ])
+      ).sort()
+    );
+  }, []);
+
   const fetchProducts = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        page_size: String(pageSize),
-      });
-
-      if (search.trim()) params.set("search", search.trim());
-      if (category) params.set("category", category);
-
-      const response = await apiRequest<CatalogueResponse>(
-        `/products/catalogue?${params.toString()}`
-      );
-
-      setProducts(
-        response.items.map((product) => ({
-          ...product,
-          is_in_stock: product.quantity_available > 0,
-        })),
-      );
-      setTotal(response.total);
-
-      setCategories((previous) =>
-        Array.from(
-          new Set([
-            ...previous,
-            ...response.items.map((product) => product.category),
-          ])
-        ).sort()
-      );
+      const response = await loadCatalogue();
+      applyCatalogueResponse(response);
     } catch (err) {
       setError(
         err instanceof Error
@@ -111,7 +117,7 @@ export default function RetailerCataloguePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, search, category]);
+  }, [loadCatalogue, applyCatalogueResponse]);
 
   useEffect(() => {
     if (loading) return;
@@ -121,8 +127,30 @@ export default function RetailerCataloguePage() {
       return;
     }
 
-    fetchProducts();
-  }, [user, loading, router, fetchProducts]);
+    let cancelled = false;
+
+    async function loadProducts() {
+      try {
+        const response = await loadCatalogue();
+        if (!cancelled) applyCatalogueResponse(response);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load the product catalogue."
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    void loadProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, loading, router, loadCatalogue, applyCatalogueResponse]);
 
   useEffect(() => {
     const syncCart = () => setCartItems(getCart());
@@ -140,6 +168,16 @@ export default function RetailerCataloguePage() {
 
   function handleSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsLoading(true);
+    setError("");
+    setSearch(searchInput.trim());
+    setPage(1);
+  }
+
+  function handleCategoryChange(value: string) {
+    setIsLoading(true);
+    setError("");
+    setCategory(value);
     setPage(1);
   }
 
@@ -286,11 +324,7 @@ export default function RetailerCataloguePage() {
   }
 
   if (loading) {
-    return (
-      <main className="min-h-screen w-full bg-[#f7f7f5] px-4 py-5 text-sm text-neutral-500 sm:px-6 lg:px-8">
-        Loading account...
-      </main>
-    );
+    return <CatalogueLoading />;
   }
 
   return (
@@ -319,8 +353,8 @@ export default function RetailerCataloguePage() {
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
               />
               <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
                 placeholder="Search product, SKU or brand..."
                 className="w-full border border-neutral-300 py-3 pl-10 pr-3 text-sm outline-none focus:border-neutral-900"
               />
@@ -328,10 +362,7 @@ export default function RetailerCataloguePage() {
 
             <select
               value={category}
-              onChange={(event) => {
-                setCategory(event.target.value);
-                setPage(1);
-              }}
+              onChange={(event) => handleCategoryChange(event.target.value)}
               className="w-full border border-neutral-300 bg-white px-3 py-3 text-sm outline-none focus:border-neutral-900 sm:w-auto"
             >
               <option value="">All categories</option>
@@ -380,7 +411,11 @@ export default function RetailerCataloguePage() {
           <div className="mb-5 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
             <button
-              onClick={fetchProducts}
+              onClick={() => {
+                setIsLoading(true);
+                setError("");
+                void fetchProducts();
+              }}
               className="ml-3 font-semibold underline"
             >
               Retry
@@ -388,10 +423,14 @@ export default function RetailerCataloguePage() {
           </div>
         )}
 
-        {isLoading ? (
-          <div className="border border-neutral-200 bg-white p-12 text-center text-sm text-neutral-500">
-            Loading products...
-          </div>
+        {isLoading && products.length > 0 && (
+          <p className="mb-3 text-xs text-neutral-500" role="status">
+            Updating products...
+          </p>
+        )}
+
+        {isLoading && products.length === 0 ? (
+          <CatalogueLoading />
         ) : products.length === 0 ? (
           <div className="border border-neutral-200 bg-white px-6 py-16 text-center">
             <Package className="mx-auto mb-3 text-neutral-400" size={32} />
@@ -516,7 +555,10 @@ export default function RetailerCataloguePage() {
           <div className="flex gap-2">
             <button
               disabled={page <= 1 || isLoading}
-              onClick={() => setPage((current) => current - 1)}
+              onClick={() => {
+                setIsLoading(true);
+                setPage((current) => current - 1);
+              }}
               className="border border-neutral-300 bg-white p-2 disabled:opacity-40"
               aria-label="Previous page"
             >
@@ -524,7 +566,10 @@ export default function RetailerCataloguePage() {
             </button>
             <button
               disabled={page >= totalPages || isLoading}
-              onClick={() => setPage((current) => current + 1)}
+              onClick={() => {
+                setIsLoading(true);
+                setPage((current) => current + 1);
+              }}
               className="border border-neutral-300 bg-white p-2 disabled:opacity-40"
               aria-label="Next page"
             >

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -160,3 +161,68 @@ def get_retailer_product_price(
         "No active retailer-specific or distributor default price "
         "is configured for this product."
     )
+
+
+def get_retailer_product_prices(
+    db: Session,
+    retailer_id: UUID,
+    product_ids: list[UUID],
+    at: datetime | None = None,
+) -> dict[UUID, RetailerProductPrice | DistributorProductPrice]:
+    if not product_ids:
+        return {}
+
+    current_time = at or datetime.now(timezone.utc)
+    active_price_conditions = (
+        RetailerProductPrice.valid_from <= current_time,
+        or_(
+            RetailerProductPrice.valid_to.is_(None),
+            RetailerProductPrice.valid_to > current_time,
+        ),
+    )
+    retailer_prices = db.scalars(
+        select(RetailerProductPrice).where(
+            RetailerProductPrice.retailer_id == retailer_id,
+            RetailerProductPrice.product_id.in_(product_ids),
+            *active_price_conditions,
+        )
+    ).all()
+
+    prices_by_product: dict[UUID, list[RetailerProductPrice]] = defaultdict(list)
+    for price in retailer_prices:
+        prices_by_product[price.product_id].append(price)
+
+    resolved_prices: dict[
+        UUID, RetailerProductPrice | DistributorProductPrice
+    ] = {}
+    default_product_ids = []
+    for product_id in product_ids:
+        matching_prices = prices_by_product.get(product_id, [])
+        if len(matching_prices) == 1:
+            resolved_prices[product_id] = matching_prices[0]
+        elif not matching_prices:
+            default_product_ids.append(product_id)
+
+    if not default_product_ids:
+        return resolved_prices
+
+    default_prices = db.scalars(
+        select(DistributorProductPrice).where(
+            DistributorProductPrice.product_id.in_(default_product_ids),
+            DistributorProductPrice.valid_from <= current_time,
+            or_(
+                DistributorProductPrice.valid_to.is_(None),
+                DistributorProductPrice.valid_to > current_time,
+            ),
+        )
+    ).all()
+
+    defaults_by_product: dict[UUID, list[DistributorProductPrice]] = defaultdict(list)
+    for price in default_prices:
+        defaults_by_product[price.product_id].append(price)
+
+    for product_id, matching_prices in defaults_by_product.items():
+        if len(matching_prices) == 1:
+            resolved_prices[product_id] = matching_prices[0]
+
+    return resolved_prices
