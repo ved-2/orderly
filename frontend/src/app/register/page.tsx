@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -60,8 +60,17 @@ export default function RegisterPage() {
   async function redirectAfterLogin() {
     try {
       const profile = await apiRequest<{
+        role: string;
         retailer_id: string | null;
       }>("/auth/me");
+
+      if (
+        profile.role === "ORDER_DESK" ||
+        profile.role === "DISTRIBUTOR_ADMIN"
+      ) {
+        window.location.replace("/order-desk");
+        return;
+      }
 
       if (profile.retailer_id) {
         window.location.replace("/retailer/dashboard");
@@ -70,10 +79,17 @@ export default function RegisterPage() {
 
       setStage("shop");
     } catch (error) {
-      console.error("Unable to check retailer registration:", error);
+      console.error("Unable to check user profile:", error);
       setStage("shop");
     }
   }
+
+  useEffect(() => {
+    if (loading) return;
+    if (user && user.emailVerified) {
+      redirectAfterLogin();
+    }
+  }, [user, loading]);
 
   async function handleEmailAuth(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
