@@ -40,6 +40,7 @@ export default function RegisterPage() {
   const { user, loading } = useAuth();
 
   const [stage, setStage] = useState<Stage>("account");
+  const [accountType, setAccountType] = useState<"retailer" | "distributor">("retailer");
   const [isLogin, setIsLogin] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
@@ -87,10 +88,12 @@ export default function RegisterPage() {
         retailer_id: string | null;
       }>("/auth/me");
 
-      if (
-        profile.role === "ORDER_DESK" ||
-        profile.role === "DISTRIBUTOR_ADMIN"
-      ) {
+      if (profile.role === "DISTRIBUTOR_ADMIN") {
+        window.location.replace("/distributor");
+        return;
+      }
+
+      if (profile.role === "ORDER_DESK") {
         window.location.replace("/order-desk");
         return;
       }
@@ -126,6 +129,13 @@ export default function RegisterPage() {
         if (!firebaseUser.emailVerified) {
           setStage("verification");
         } else {
+          if (accountType === "distributor") {
+            try {
+              await apiRequest("/auth/distributor/register", { method: "POST" });
+            } catch {
+              // ignore if already registered
+            }
+          }
           await redirectAfterLogin();
         }
       } else {
@@ -151,6 +161,15 @@ export default function RegisterPage() {
       if (!firebaseUser.emailVerified) {
         setStage("verification");
       } else {
+        if (accountType === "distributor") {
+          try {
+            await apiRequest("/auth/distributor/register", { method: "POST" });
+            window.location.replace("/distributor");
+            return;
+          } catch {
+            // fallback to redirectAfterLogin
+          }
+        }
         await redirectAfterLogin();
       }
     } catch (err) {
@@ -168,6 +187,11 @@ export default function RegisterPage() {
 
     try {
       await refreshEmailVerification();
+      if (accountType === "distributor") {
+        await apiRequest("/auth/distributor/register", { method: "POST" });
+        window.location.replace("/distributor");
+        return;
+      }
       setStage("shop");
     } catch (err) {
       setError(
@@ -246,15 +270,50 @@ export default function RegisterPage() {
 
         {stage !== "success" && (
           <div className="mb-8">
+            {stage === "account" && !isForgotPassword && (
+              <div className="mb-6 grid grid-cols-2 border border-slate-300 bg-slate-200/60 p-1 rounded-md text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountType("retailer");
+                    setError("");
+                  }}
+                  className={`py-2 text-xs font-semibold rounded transition-colors ${
+                    accountType === "retailer"
+                      ? "bg-white text-slate-950 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Retailer (Kirana Shop)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountType("distributor");
+                    setError("");
+                  }}
+                  className={`py-2 text-xs font-semibold rounded transition-colors ${
+                    accountType === "distributor"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Distributor Admin
+                </button>
+              </div>
+            )}
+
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Retailer account
+              {accountType === "distributor" ? "Distributor Operations" : "Retailer account"}
             </p>
 
             <h1 className="text-3xl font-semibold tracking-tight">
               {isForgotPassword
                 ? "Reset your password."
                 : stage === "account" && (
-                    isLogin ? "Welcome back." : "Register your shop."
+                    accountType === "distributor"
+                      ? (isLogin ? "Distributor Sign In." : "Register as Distributor Admin.")
+                      : (isLogin ? "Welcome back." : "Register your shop.")
                   )}
               {stage === "verification" && "Verify your email."}
               {stage === "shop" && "Tell us about your shop."}
@@ -263,8 +322,11 @@ export default function RegisterPage() {
             <p className="mt-3 text-sm leading-6 text-slate-600">
               {isForgotPassword
                 ? "Enter your account email to receive a password reset link."
-                : stage === "account" &&
-                  "Create your account to access distributor products, prices and schemes."}
+                : stage === "account" && (
+                    accountType === "distributor"
+                      ? "Create or access your distributor administrator account to manage kirana shops, orders, and pricing."
+                      : "Create your account to access distributor products, prices and schemes."
+                  )}
               {stage === "verification" &&
                 `We need to verify ${user?.email ?? email} before continuing.`}
               {stage === "shop" &&
@@ -399,7 +461,9 @@ export default function RegisterPage() {
                 className="flex w-full items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
               >
                 {busy ? <Loader2 size={17} className="animate-spin" /> : null}
-                {isLogin ? "Sign in" : "Create account"}
+                {accountType === "distributor"
+                  ? (isLogin ? "Sign in as Distributor" : "Create Distributor Account")
+                  : (isLogin ? "Sign in" : "Create account")}
                 {!busy && <ArrowRight size={16} />}
               </button>
             </form>

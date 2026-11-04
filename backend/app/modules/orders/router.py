@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import csv
+import io
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
@@ -781,3 +784,176 @@ def reject_order(
     except Exception:
         db.rollback()
         raise
+
+@router.get("/export/tally")
+def export_orders_tally(
+    status_filter: str = Query(default="APPROVED", alias="status"),
+    start_date: str | None = None,
+    end_date: str | None = None,
+    format_type: str = Query(default="csv", alias="format"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("DISTRIBUTOR_ADMIN", "ORDER_DESK")
+    ),
+):
+    query = select(Order)
+    if status_filter.upper() == "ALL":
+        query = query.where(Order.status.in_(["APPROVED", "DISPATCHED"]))
+    else:
+        query = query.where(Order.status == status_filter.upper())
+
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date)
+            query = query.where(Order.created_at >= start_dt)
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date)
+            query = query.where(Order.created_at <= end_dt)
+        except ValueError:
+            pass
+
+    orders = db.scalars(query.order_by(Order.approved_at.asc(), Order.created_at.asc())).all()
+
+    if not orders:
+        if format_type.lower() == "json":
+            return {"items": [], "count": 0, "orders_count": 0}
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "Voucher Number",
+            "Voucher Date",
+            "Party Name",
+            "Retailer Code",
+            "Item Name",
+            "SKU",
+            "Billed Qty",
+            "Free Qty",
+            "UOM",
+            "Rate",
+            "Discount",
+            "Tax",
+            "Amount",
+            "Voucher Total",
+            "City",
+            "Address",
+            "Status",
+        ])
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=tally_sales_export_empty.csv"},
+        )
+
+    order_ids = [o.id for o in orders]
+    retailer_ids = list({o.retailer_id for o in orders})
+
+    order_items = db.scalars(
+        select(OrderItem)
+        .where(OrderItem.order_id.in_(order_ids))
+        .order_by(OrderItem.created_at.asc())
+    ).all()
+    items_by_order: dict = {}
+    for item in order_items:
+        items_by_order.setdefault(item.order_id, []).append(item)
+
+    retailers = db.scalars(
+        select(Retailer).where(Retailer.id.in_(retailer_ids))
+    ).all()
+    retailers_by_id = {r.id: r for r in retailers}
+
+    rows = []
+    for order in orders:
+        ret = retailers_by_id.get(order.retailer_id)
+        party_name = ret.shop_name if ret else f"Retailer {str(order.retailer_id)[:8]}"
+        ret_code = ret.retailer_code if ret else ""
+        city = ret.city if ret else ""
+        address = ret.address if ret else ""
+        v_date = (order.approved_at or order.submitted_at or order.created_at).strftime("%Y-%m-%d")
+
+        lines = items_by_order.get(order.id, [])
+        for line in lines:
+            rows.append({
+                "voucher_number": order.order_number,
+                "voucher_date": v_date,
+                "party_name": party_name,
+                "retailer_code": ret_code,
+                "item_name": line.product_name,
+                "sku": line.sku,
+                "billed_qty": float(line.quantity),
+                "free_qty": float(line.free_quantity),
+                "uom": line.quantity_unit,
+                "rate": float(line.unit_price),
+                "discount": float(line.discount_amount),
+                "tax": float(line.tax_amount),
+                "amount": float(line.line_total),
+                "voucher_total": float(order.total_amount),
+                "city": city,
+                "address": address,
+                "status": order.status,
+            })
+
+    if format_type.lower() == "json":
+        return {
+            "items": rows,
+            "count": len(rows),
+            "orders_count": len(orders),
+        }
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Voucher Number",
+        "Voucher Date",
+        "Party Name",
+        "Retailer Code",
+        "Item Name",
+        "SKU",
+        "Billed Qty",
+        "Free Qty",
+        "UOM",
+        "Rate",
+        "Discount",
+        "Tax",
+        "Amount",
+        "Voucher Total",
+        "City",
+        "Address",
+        "Status",
+    ])
+
+    for r in rows:
+        writer.writerow([
+            r["voucher_number"],
+            r["voucher_date"],
+            r["party_name"],
+            r["retailer_code"],
+            r["item_name"],
+            r["sku"],
+            r["billed_qty"],
+            r["free_qty"],
+            r["uom"],
+            r["rate"],
+            r["discount"],
+            r["tax"],
+            r["amount"],
+            r["voucher_total"],
+            r["city"],
+            r["address"],
+            r["status"],
+        ])
+
+    output.seek(0)
+    today_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    filename = f"tally_sales_export_{today_str}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
