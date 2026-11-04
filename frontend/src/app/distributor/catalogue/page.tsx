@@ -463,19 +463,19 @@ export default function DistributorCataloguePage() {
   const activeSchemesCount = schemes.filter((s) => s.is_active).length;
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-900">
+    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
       {/* Top Bar */}
-      <header className="border-b border-gray-200 bg-white">
+      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
               href="/distributor"
-              className="text-xs font-semibold tracking-wider uppercase text-gray-500 hover:text-gray-900"
+              className="text-xs font-semibold tracking-wider uppercase text-[#666864] hover:text-[#242724] transition-colors"
             >
               &larr; Administration Console
             </Link>
-            <span className="text-gray-300">/</span>
-            <span className="text-xs font-semibold uppercase text-gray-900">
+            <span className="text-[#E7E6E0]">/</span>
+            <span className="text-xs font-bold uppercase text-[#242724]">
               Master Catalogue & Schemes
             </span>
           </div>
@@ -486,7 +486,7 @@ export default function DistributorCataloguePage() {
                 if (brands.length > 0 && !newBrandId) setNewBrandId(brands[0].id);
                 setShowAddProductModal(true);
               }}
-              className="bg-gray-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-gray-800"
+              className="rounded-[4px] bg-[#79565D] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
             >
               + Add New Product
             </button>

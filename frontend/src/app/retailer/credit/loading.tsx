@@ -1,48 +1,58 @@
 export default function RetailerCreditLoading() {
   return (
     <div
-      className="space-y-8 p-6 sm:p-8"
+      className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6"
       aria-busy="true"
       aria-label="Loading credit account"
     >
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-          Retailer Workspace / Credit Passbook
-        </p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-neutral-950">
-          Credit Account &amp; Statement
-        </h1>
-        <p className="mt-1 text-xs text-neutral-500" role="status">
-          Loading your credit account...
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[...Array(4)].map((_, index) => (
-          <div
-            key={index}
-            className="space-y-4 border border-neutral-200 bg-white p-5"
-          >
-            <div className="h-3 w-2/3 animate-pulse bg-neutral-200" />
-            <div className="h-7 w-1/2 animate-pulse bg-neutral-200" />
-            <div className="h-3 w-3/4 animate-pulse bg-neutral-100" />
+      {/* Header Skeleton */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-5">
+        <div className="flex items-start gap-3.5">
+          <div className="h-11 w-11 rounded-lg bg-[#E7E6E0] animate-pulse" />
+          <div className="space-y-2">
+            <div className="h-8 w-48 bg-[#E7E6E0] animate-pulse rounded" />
+            <div className="h-4 w-60 bg-[#E7E6E0] animate-pulse rounded" />
           </div>
-        ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-24 bg-[#E7E6E0] animate-pulse rounded-md" />
+          <div className="h-10 w-28 bg-[#E7E6E0] animate-pulse rounded-md" />
+        </div>
       </div>
 
-      <div className="space-y-3 border border-neutral-200 bg-white p-5">
-        <div className="h-3 w-1/3 animate-pulse bg-neutral-200" />
-        <div className="h-3 w-full animate-pulse bg-neutral-100" />
-        <div className="h-3 w-2/3 animate-pulse bg-neutral-100" />
+      {/* Available Credit Hero Skeleton */}
+      <div className="border border-[#E7E6E0] bg-white rounded-xl p-6 sm:p-8 space-y-6">
+        <div className="h-4 w-36 bg-[#E7E6E0] animate-pulse rounded" />
+        <div className="h-12 w-64 bg-[#E7E6E0] animate-pulse rounded" />
+        <div className="h-3.5 w-full bg-[#E7E6E0] animate-pulse rounded-full" />
+        <div className="flex justify-between">
+          <div className="h-4 w-40 bg-[#E7E6E0] animate-pulse rounded" />
+          <div className="h-4 w-40 bg-[#E7E6E0] animate-pulse rounded" />
+        </div>
       </div>
 
-      <div className="space-y-5 border border-neutral-200 bg-white p-6">
-        <div className="h-4 w-1/3 animate-pulse bg-neutral-200" />
+      {/* 2 Summary Cards Skeleton */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="border border-[#E7E6E0] bg-white rounded-xl p-6 space-y-3">
+          <div className="h-4 w-32 bg-[#E7E6E0] animate-pulse rounded" />
+          <div className="h-8 w-40 bg-[#E7E6E0] animate-pulse rounded" />
+          <div className="h-3 w-52 bg-[#E7E6E0] animate-pulse rounded" />
+        </div>
+        <div className="border border-[#E7E6E0] bg-white rounded-xl p-6 space-y-3">
+          <div className="h-4 w-32 bg-[#E7E6E0] animate-pulse rounded" />
+          <div className="h-8 w-40 bg-[#E7E6E0] animate-pulse rounded" />
+          <div className="h-3 w-52 bg-[#E7E6E0] animate-pulse rounded" />
+        </div>
+      </div>
+
+      {/* Transactions Skeleton */}
+      <div className="border border-[#E7E6E0] bg-white rounded-xl p-6 space-y-4">
+        <div className="h-6 w-48 bg-[#E7E6E0] animate-pulse rounded" />
         <div className="space-y-3">
           {[...Array(4)].map((_, index) => (
             <div
               key={index}
-              className="h-8 animate-pulse border-b border-neutral-100 bg-neutral-50"
+              className="h-14 animate-pulse rounded bg-[#F6F5F1]"
             />
           ))}
         </div>

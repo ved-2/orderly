@@ -259,17 +259,17 @@ export default function RegisterPage() {
   }
 
   const inputClass =
-    "w-full rounded-md border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900";
+    "w-full rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-2.5 text-xs text-[#242724] outline-none transition focus:border-[#79565D] focus:ring-1 focus:ring-[#79565D]";
 
   return (
-    <main className="flex min-h-screen bg-[#f5f5f2] text-slate-900">
+    <main className="flex min-h-screen bg-[#F6F5F1] text-[#242724]">
       <section className="mx-auto flex w-full max-w-xl flex-col justify-center px-5 py-12 sm:px-10">
-        <Link href="/" className="mb-12 inline-flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-white">
-            <Store size={19} />
+        <Link href="/" className="mb-10 inline-flex items-center gap-2 group">
+          <span className="flex h-8 w-8 items-center justify-center rounded-[4px] bg-[#242724] text-white transition-colors group-hover:bg-[#79565D]">
+            <Store size={16} />
           </span>
-          <span className="text-xl font-semibold tracking-tight">
-            orderly
+          <span className="text-lg font-bold tracking-tight text-[#242724]">
+            orderly<span className="text-[#79565D]">.</span>
           </span>
         </Link>
 

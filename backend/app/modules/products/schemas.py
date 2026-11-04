@@ -1,7 +1,7 @@
 from uuid import UUID
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict,Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CatalogueProductResponse(BaseModel):
@@ -28,6 +28,8 @@ class CatalogueProductResponse(BaseModel):
     quantity_reserved: Decimal
     quantity_available: Decimal
 
+    schemes: list[dict] = Field(default_factory=list)
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -36,8 +38,6 @@ class CatalogueResponse(BaseModel):
     total: int
     page: int
     page_size: int
-    
-
 
 
 class ProductImageSignatureResponse(BaseModel):

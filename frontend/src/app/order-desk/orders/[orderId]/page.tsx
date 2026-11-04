@@ -3,8 +3,25 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  XCircle,
+  FileSpreadsheet,
+  Store,
+  Wallet,
+  ShieldCheck,
+  Package,
+  FileText,
+  User,
+  Truck,
+} from "lucide-react";
+
 import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 
 interface OrderData {
   id: string;
@@ -86,10 +103,34 @@ interface UserProfile {
 
 const ALLOWED_ROLES = new Set(["ORDER_DESK", "DISTRIBUTOR_ADMIN"]);
 
+function formatCurrency(val: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(val);
+}
+
+function formatDate(isoString: string | null): string {
+  if (!isoString) return "-";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return isoString;
+  }
+}
+
 function OrderDetailContent() {
   const params = useParams<{ orderId: string }>();
   const router = useRouter();
-  const { user, loading: authLoading, logout } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -119,8 +160,8 @@ function OrderDetailContent() {
     let isMounted = true;
     async function fetchProfile() {
       try {
-        const userProfile = await apiRequest<UserProfile>("/auth/me");
-        if (isMounted) setProfile(userProfile);
+        const p = await apiRequest<UserProfile>("/auth/me");
+        if (isMounted) setProfile(p);
       } catch (err) {
         if (isMounted) {
           setError(
@@ -138,9 +179,9 @@ function OrderDetailContent() {
     };
   }, [user, authLoading]);
 
-  // 2. Fetch complete order detail
-  const loadOrder = useCallback(async () => {
-    if (!params?.orderId) return;
+  // 2. Load order details
+  const loadOrderDetail = useCallback(async () => {
+    if (!params.orderId) return;
     try {
       setLoading(true);
       setError(null);
@@ -152,31 +193,30 @@ function OrderDetailContent() {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to load order from server."
+          : "Failed to load order review data from server."
       );
     } finally {
       setLoading(false);
     }
-  }, [params?.orderId]);
+  }, [params.orderId]);
 
   useEffect(() => {
     if (profile && ALLOWED_ROLES.has(profile.role)) {
-      loadOrder();
+      loadOrderDetail();
     }
-  }, [profile, loadOrder]);
+  }, [profile, loadOrderDetail]);
 
-  // 3. Action: Start Review
+  // Actions
   const handleStartReview = async () => {
-    if (!params?.orderId) return;
-    setActionBusy(true);
-    setActionMessage(null);
-    setActionError(null);
+    if (!data?.order) return;
     try {
-      await apiRequest(`/orders/desk/${params.orderId}/start-review`, {
+      setActionBusy(true);
+      setActionError(null);
+      await apiRequest(`/orders/${data.order.id}/start-review`, {
         method: "POST",
       });
-      setActionMessage("Order status updated to UNDER REVIEW.");
-      await loadOrder();
+      setActionMessage("Order status updated to UNDER_REVIEW");
+      await loadOrderDetail();
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : "Failed to start review."
@@ -186,25 +226,20 @@ function OrderDetailContent() {
     }
   };
 
-  // 4. Action: Approve Order
   const handleApproveOrder = async () => {
-    if (!params?.orderId) return;
-    setActionBusy(true);
-    setActionError(null);
+    if (!data?.order) return;
     try {
-      const res = await apiRequest<{ message: string; warehouse_name?: string }>(
-        `/orders/desk/${params.orderId}/approve`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            desk_note: approveNote.trim() || null,
-          }),
-        }
-      );
-      setActionMessage(res.message || "Order approved successfully. Stock reserved.");
+      setActionBusy(true);
+      setActionError(null);
+      await apiRequest(`/orders/${data.order.id}/approve`, {
+        method: "POST",
+        body: JSON.stringify({
+          note: approveNote.trim() || undefined,
+        }),
+      });
       setShowApproveModal(false);
-      setApproveNote("");
-      await loadOrder();
+      setActionMessage("Order successfully APPROVED and stock committed.");
+      await loadOrderDetail();
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : "Approval failed."
@@ -214,29 +249,20 @@ function OrderDetailContent() {
     }
   };
 
-  // 5. Action: Reject Order
   const handleRejectOrder = async () => {
-    if (!params?.orderId) return;
-    if (rejectReason.trim().length < 3) {
-      setActionError("Please provide a rejection reason (minimum 3 characters).");
-      return;
-    }
-    setActionBusy(true);
-    setActionError(null);
+    if (!data?.order) return;
     try {
-      const res = await apiRequest<{ message: string }>(
-        `/orders/desk/${params.orderId}/reject`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            reason: rejectReason.trim(),
-          }),
-        }
-      );
-      setActionMessage(res.message || "Order has been rejected.");
+      setActionBusy(true);
+      setActionError(null);
+      await apiRequest(`/orders/${data.order.id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({
+          reason: rejectReason.trim(),
+        }),
+      });
       setShowRejectModal(false);
-      setRejectReason("");
-      await loadOrder();
+      setActionMessage("Order marked as REJECTED.");
+      await loadOrderDetail();
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : "Rejection failed."
@@ -246,92 +272,30 @@ function OrderDetailContent() {
     }
   };
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 2,
-    }).format(val);
-  };
-
-  const formatDate = (isoString?: string | null) => {
-    if (!isoString) return "-";
-    try {
-      const d = new Date(isoString);
-      return d.toLocaleString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return isoString;
-    }
-  };
-
-  if (authLoading || profileLoading) {
+  if (authLoading || profileLoading || loading) {
     return (
-      <main className="min-h-screen bg-gray-50 p-8">
+      <main className="min-h-screen bg-[#F6F5F1] p-8">
         <div className="mx-auto max-w-7xl">
-          <p className="text-sm text-gray-500">Authenticating staff session...</p>
+          <div className="h-8 w-48 animate-pulse rounded bg-[#E7E6E0]" />
+          <div className="mt-6 h-96 animate-pulse rounded bg-[#E7E6E0]" />
         </div>
       </main>
     );
   }
 
-  if (!user) {
+  if (!user || !profile || !ALLOWED_ROLES.has(profile.role)) {
     return (
-      <main className="min-h-screen bg-gray-50 p-8">
-        <div className="mx-auto max-w-md border border-gray-200 bg-white p-6">
-          <h1 className="text-lg font-semibold text-gray-950">
-            Sign In Required
+      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
+        <div className="mx-auto max-w-md w-full rounded-[6px] border border-[#E7E6E0] bg-white p-6 text-center shadow-2xs">
+          <h1 className="text-base font-bold text-[#242724]">
+            Order Desk Authorization Required
           </h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Please sign in to access this order.
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/register"
-              className="inline-block bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              Sign in
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!profile || !ALLOWED_ROLES.has(profile.role)) {
-    return (
-      <main className="min-h-screen bg-gray-50 p-8">
-        <div className="mx-auto max-w-md border border-amber-200 bg-white p-6">
-          <h1 className="text-lg font-semibold text-gray-950">
-            Access Restricted
-          </h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Only Order Desk staff and Administrators can review orders.
-          </p>
-          <div className="mt-6">
-            <button
-              type="button"
-              onClick={() => logout()}
-              className="bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (loading && !data) {
-    return (
-      <main className="min-h-screen bg-gray-50 p-8">
-        <div className="mx-auto max-w-7xl">
-          <p className="text-sm text-gray-500">Loading order review details...</p>
+          <Link
+            href="/register"
+            className="mt-4 inline-block rounded-[4px] bg-[#79565D] px-4 py-2 text-xs font-semibold text-white"
+          >
+            Sign in
+          </Link>
         </div>
       </main>
     );
@@ -339,74 +303,68 @@ function OrderDetailContent() {
 
   if (error || !data) {
     return (
-      <main className="min-h-screen bg-gray-50 p-8">
-        <div className="mx-auto max-w-xl border border-red-200 bg-white p-6">
-          <h1 className="text-lg font-semibold text-red-950">
-            Order Not Found
-          </h1>
-          <p className="mt-2 text-sm text-red-700">
-            {error || "Could not retrieve the requested order."}
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/order-desk/orders"
-              className="inline-block border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
-            >
-              &larr; Return to Pending Queue
-            </Link>
-          </div>
+      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
+        <div className="mx-auto max-w-md w-full rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-6 text-center">
+          <h1 className="text-sm font-bold text-[#8C2828]">Order Not Found</h1>
+          <p className="mt-1 text-xs text-[#8C2828] opacity-80">{error}</p>
+          <Link
+            href="/order-desk/orders"
+            className="mt-4 inline-block rounded-[4px] bg-[#8C2828] px-4 py-2 text-xs font-semibold text-white"
+          >
+            Return to Queue
+          </Link>
         </div>
       </main>
     );
   }
 
   const { order, retailer, credit, items, history } = data;
-  const isCreditShort =
-    credit && credit.available_credit < order.total_amount;
+  const isCreditShort = credit && credit.available_credit < order.total_amount;
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
       {/* Top Header */}
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
           <div className="flex items-center gap-3">
             <Link
               href="/order-desk/orders"
-              className="text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-900"
+              className="flex items-center gap-1.5 text-xs font-semibold text-[#666864] hover:text-[#242724] transition-colors"
             >
-              &larr; Pending Queue
+              <ArrowLeft size={14} />
+              <span>Pending Queue</span>
             </Link>
-            <span className="text-gray-300">/</span>
-            <span className="font-mono text-sm font-semibold text-gray-950">
+            <span className="text-[#E7E6E0]">/</span>
+            <span className="font-mono text-sm font-bold text-[#242724]">
               {order.order_number}
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span
-              className={`border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
-                order.status === "SUBMITTED"
-                  ? "border-amber-300 bg-amber-50 text-amber-800"
+          <div className="flex items-center gap-2.5">
+            <Badge
+              variant={
+                order.status === "APPROVED"
+                  ? "success"
+                  : order.status === "SUBMITTED"
+                  ? "warning"
                   : order.status === "UNDER_REVIEW"
-                  ? "border-blue-300 bg-blue-50 text-blue-800"
-                  : order.status === "APPROVED"
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                  ? "info"
                   : order.status === "REJECTED"
-                  ? "border-red-300 bg-red-50 text-red-800"
-                  : "border-gray-300 bg-gray-50 text-gray-800"
-              }`}
+                  ? "danger"
+                  : "default"
+              }
             >
               {order.status.replace("_", " ")}
-            </span>
+            </Badge>
 
             {(order.status === "SUBMITTED" || order.status === "UNDER_REVIEW") && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-2">
                 {order.status === "SUBMITTED" && (
                   <button
                     type="button"
                     onClick={handleStartReview}
                     disabled={actionBusy}
-                    className="border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition-colors"
                   >
                     Start Review
                   </button>
@@ -418,9 +376,9 @@ function OrderDetailContent() {
                     setShowRejectModal(true);
                   }}
                   disabled={actionBusy}
-                  className="border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  className="rounded-[4px] border border-[#EDBCBC] bg-white px-3 py-1.5 text-xs font-semibold text-[#8C2828] hover:bg-[#FBF0F0] transition-colors"
                 >
-                  Reject Order
+                  Reject
                 </button>
                 <button
                   type="button"
@@ -429,7 +387,7 @@ function OrderDetailContent() {
                     setShowApproveModal(true);
                   }}
                   disabled={actionBusy}
-                  className="border border-emerald-700 bg-emerald-700 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                  className="rounded-[4px] bg-[#205234] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#183F28] transition-colors shadow-2xs"
                 >
                   Approve Order
                 </button>
@@ -439,91 +397,92 @@ function OrderDetailContent() {
         </div>
       </header>
 
+      {/* Notifications */}
       {actionMessage && (
-        <div className="border-b border-emerald-200 bg-emerald-50 px-6 py-3 text-center text-xs font-medium text-emerald-900">
+        <div className="border-b border-[#C3DEC9] bg-[#EEF6F1] px-6 py-2.5 text-center text-xs font-semibold text-[#205234]">
           {actionMessage}
         </div>
       )}
       {actionError && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-center text-xs font-medium text-red-900">
+        <div className="border-b border-[#EDBCBC] bg-[#FBF0F0] px-6 py-2.5 text-center text-xs font-semibold text-[#8C2828]">
           {actionError}
         </div>
       )}
 
       {/* Main Review Workspace */}
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Main 2-Column Section: Items, Totals & Timeline */}
+          {/* Main 2-Column: Ordered Lines Table & Timeline */}
           <div className="space-y-6 lg:col-span-2">
             {/* Ordered Items Table */}
-            <div className="border border-gray-200 bg-white">
-              <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white shadow-2xs overflow-hidden">
+              <div className="border-b border-[#E7E6E0] bg-[#FAF9F6] px-4 sm:px-6 py-3.5 flex items-center justify-between">
                 <div>
-                  <h2 className="text-base font-semibold text-gray-950">
-                    Order Items ({items.length})
+                  <h2 className="text-sm font-bold text-[#242724]">
+                    Order Items Breakdown ({items.length})
                   </h2>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    Source: {order.source} | Placed on {formatDate(order.created_at)}
+                  <p className="mt-0.5 text-[11px] text-[#666864]">
+                    Source: <strong className="text-[#242724]">{order.source}</strong> · Placed {formatDate(order.created_at)}
                   </p>
                 </div>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-gray-200 bg-gray-50 text-xs font-medium uppercase tracking-wider text-gray-500">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-[#E7E6E0] bg-[#FAF9F6] text-[10px] font-bold uppercase tracking-wider text-[#969892]">
                     <tr>
-                      <th className="px-6 py-3">Product / SKU</th>
-                      <th className="px-6 py-3 text-center">Ordered</th>
-                      <th className="px-6 py-3 text-center">Free Scheme</th>
-                      <th className="px-6 py-3 text-right">Unit Price</th>
-                      <th className="px-6 py-3 text-right">Line Total</th>
+                      <th className="px-4 py-2.5">Product / SKU</th>
+                      <th className="px-4 py-2.5 text-center">Ordered</th>
+                      <th className="px-4 py-2.5 text-center">Free Scheme</th>
+                      <th className="px-4 py-2.5 text-right">Unit Rate</th>
+                      <th className="px-4 py-2.5 text-right">Line Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200">
+                  <tbody className="divide-y divide-[#F0EFEA]">
                     {items.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50/50">
-                        <td className="px-6 py-4">
-                          <p className="font-medium text-gray-950">
+                      <tr key={item.id} className="hover:bg-[#FBFBFA]">
+                        <td className="px-4 py-3">
+                          <p className="font-bold text-[#242724]">
                             {item.product_name}
                           </p>
-                          <p className="font-mono text-xs text-gray-500">
+                          <p className="font-mono text-[11px] text-[#969892]">
                             SKU: {item.sku}
                           </p>
                         </td>
-                        <td className="px-6 py-4 text-center font-mono text-sm text-gray-900">
+                        <td className="px-4 py-3 text-center font-mono font-bold text-[#242724]">
                           <p>{item.quantity} {item.quantity_unit}</p>
                           {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 && (
-                            <p className="text-[11px] text-gray-500 font-normal">
+                            <p className="text-[10px] text-[#666864] font-normal">
                               ({item.quantity * item.units_per_case} pcs)
                             </p>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-center">
+                        <td className="px-4 py-3 text-center">
                           {item.free_quantity > 0 ? (
-                            <span className="border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                              +{item.free_quantity} {item.quantity_unit} free
-                            </span>
+                            <Badge variant="success">
+                              +{item.free_quantity} {item.quantity_unit} bonus
+                            </Badge>
                           ) : (
-                            <span className="text-gray-400">-</span>
+                            <span className="text-[#969892]">—</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-right font-mono text-sm">
+                        <td className="px-4 py-3 text-right font-mono">
                           {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 ? (
                             <div>
-                              <p className="font-semibold text-gray-900">
+                              <p className="font-bold text-[#242724] tabular-nums">
                                 {formatCurrency(item.unit_price * item.units_per_case)} / cs
                               </p>
-                              <p className="text-[11px] text-gray-500 font-normal">
-                                ({formatCurrency(item.unit_price)} / pc &bull; {item.units_per_case} pcs/cs)
+                              <p className="text-[10px] text-[#969892] font-normal tabular-nums">
+                                ({formatCurrency(item.unit_price)} / pc · {item.units_per_case} pcs/cs)
                               </p>
                             </div>
                           ) : (
-                            <p className="text-gray-700">
+                            <p className="text-[#242724] tabular-nums">
                               {formatCurrency(item.unit_price)} / pc
                             </p>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-right font-mono font-medium text-gray-950">
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[#242724] tabular-nums">
                           {formatCurrency(item.line_total)}
                         </td>
                       </tr>
@@ -533,44 +492,64 @@ function OrderDetailContent() {
               </div>
 
               {/* Financial Summary */}
-              <div className="border-t border-gray-200 bg-gray-50/50 px-6 py-4">
-                <div className="ml-auto max-w-xs space-y-2 text-sm">
-                  <div className="flex justify-between text-gray-600">
+              <div className="border-t border-[#E7E6E0] bg-[#FAF9F6] px-4 sm:px-6 py-4">
+                <div className="ml-auto max-w-xs space-y-2 text-xs">
+                  <div className="flex justify-between text-[#666864]">
                     <span>Subtotal</span>
-                    <span className="font-mono">{formatCurrency(order.subtotal)}</span>
+                    <span className="font-mono font-semibold text-[#242724] tabular-nums">
+                      {formatCurrency(order.subtotal)}
+                    </span>
                   </div>
                   {order.discount_amount > 0 && (
-                    <div className="flex justify-between text-emerald-700">
-                      <span>Scheme Discount</span>
-                      <span className="font-mono">-{formatCurrency(order.discount_amount)}</span>
+                    <div className="flex justify-between text-[#205234]">
+                      <span>Scheme Promo Discount</span>
+                      <span className="font-mono font-bold tabular-nums">
+                        -{formatCurrency(order.discount_amount)}
+                      </span>
                     </div>
                   )}
-                  <div className="flex justify-between text-gray-600">
+                  <div className="flex justify-between text-[#666864]">
                     <span>Tax (GST)</span>
-                    <span className="font-mono">{formatCurrency(order.tax_amount)}</span>
+                    <span className="font-mono font-semibold text-[#242724] tabular-nums">
+                      {formatCurrency(order.tax_amount)}
+                    </span>
                   </div>
-                  <div className="border-t border-gray-200 pt-2 flex justify-between text-base font-semibold text-gray-950">
+                  <div className="border-t border-[#E7E6E0] pt-2 flex justify-between text-sm font-bold text-[#242724]">
                     <span>Grand Total</span>
-                    <span className="font-mono">{formatCurrency(order.total_amount)}</span>
+                    <span className="font-mono tabular-nums">
+                      {formatCurrency(order.total_amount)}
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Desk Note / Rejection Reason (if present) */}
+            {/* Customer Note if present */}
+            {order.customer_note && (
+              <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 shadow-2xs">
+                <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#969892]">
+                  Retailer Delivery Instructions
+                </h3>
+                <p className="mt-1 text-xs text-[#242724] italic">
+                  &ldquo;{order.customer_note}&rdquo;
+                </p>
+              </div>
+            )}
+
+            {/* Desk Note / Rejection Reason if present */}
             {order.desk_note && (
               <div
-                className={`border p-5 ${
+                className={`rounded-[6px] border p-4 shadow-2xs ${
                   order.status === "REJECTED"
-                    ? "border-red-200 bg-red-50"
-                    : "border-gray-200 bg-gray-50"
+                    ? "border-[#EDBCBC] bg-[#FBF0F0]"
+                    : "border-[#E7E6E0] bg-[#FAF9F6]"
                 }`}
               >
                 <h3
-                  className={`text-xs font-semibold uppercase tracking-wider ${
+                  className={`text-[10px] font-bold uppercase tracking-wider ${
                     order.status === "REJECTED"
-                      ? "text-red-800"
-                      : "text-gray-700"
+                      ? "text-[#8C2828]"
+                      : "text-[#666864]"
                   }`}
                 >
                   {order.status === "REJECTED"
@@ -578,10 +557,10 @@ function OrderDetailContent() {
                     : "Order Desk Note"}
                 </h3>
                 <p
-                  className={`mt-2 text-sm ${
+                  className={`mt-1 text-xs ${
                     order.status === "REJECTED"
-                      ? "text-red-900 font-medium"
-                      : "text-gray-800"
+                      ? "text-[#8C2828] font-semibold"
+                      : "text-[#242724]"
                   }`}
                 >
                   {order.desk_note}
@@ -589,59 +568,46 @@ function OrderDetailContent() {
               </div>
             )}
 
-            {/* Customer Note (if present) */}
-            {order.customer_note && (
-              <div className="border border-gray-200 bg-white p-6">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Retailer Delivery Instructions
-                </h3>
-                <p className="mt-2 text-sm text-gray-800 italic">
-                  &ldquo;{order.customer_note}&rdquo;
-                </p>
-              </div>
-            )}
-
             {/* Status History Audit Trail */}
-            <div className="border border-gray-200 bg-white p-6">
-              <h3 className="text-base font-semibold text-gray-950">
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#969892]">
                 Order Audit Trail
               </h3>
-              <p className="mt-0.5 text-xs text-gray-500">
-                Immutable record of status transitions and operator actions.
+              <p className="mt-0.5 text-xs text-[#666864]">
+                Immutable timeline of state transitions and desk operator approvals.
               </p>
 
-              <div className="mt-6 flow-root">
-                <ul className="-mb-8">
+              <div className="mt-4 flow-root">
+                <ul className="-mb-6">
                   {history.map((h, idx) => (
                     <li key={h.id}>
-                      <div className="relative pb-8">
+                      <div className="relative pb-6">
                         {idx !== history.length - 1 && (
                           <span
-                            className="absolute left-3 top-3 -ml-px h-full w-0.5 bg-gray-200"
+                            className="absolute left-3 top-3 -ml-px h-full w-0.5 bg-[#E7E6E0]"
                             aria-hidden="true"
                           />
                         )}
                         <div className="relative flex items-start space-x-3">
-                          <div className="flex h-6 w-6 items-center justify-center border border-gray-300 bg-white text-xs font-medium text-gray-700">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[#E7E6E0] bg-white text-[10px] font-bold font-mono text-[#242724]">
                             {idx + 1}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between text-xs">
-                              <p className="font-semibold text-gray-900">
+                              <p className="font-bold text-[#242724]">
                                 {h.new_status.replace("_", " ")}
                                 {h.previous_status && (
-                                  <span className="font-normal text-gray-500">
-                                    {" "}
-                                    (from {h.previous_status.replace("_", " ")})
+                                  <span className="font-normal text-[#969892]">
+                                    {" "}(from {h.previous_status.replace("_", " ")})
                                   </span>
                                 )}
                               </p>
-                              <span className="text-gray-500">
+                              <span className="text-[11px] text-[#969892] tabular-nums">
                                 {formatDate(h.created_at)}
                               </span>
                             </div>
                             {h.note && (
-                              <p className="mt-1 text-xs text-gray-600">
+                              <p className="mt-0.5 text-xs text-[#666864]">
                                 {h.note}
                               </p>
                             )}
@@ -655,182 +621,179 @@ function OrderDetailContent() {
             </div>
           </div>
 
-          {/* Right 1-Column Section: Retailer & Credit Info */}
-          <div className="space-y-6">
-            {/* Retailer Info Card */}
-            <div className="border border-gray-200 bg-white p-6">
+          {/* Right 1-Column: Retailer & Credit Info */}
+          <div className="space-y-4">
+            {/* Retailer Card */}
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-gray-950">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#969892]">
                   Retailer Profile
                 </h3>
                 {retailer && (
-                  <span className="border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">
+                  <Badge variant="outline" className="text-[10px]">
                     {retailer.registration_status}
-                  </span>
+                  </Badge>
                 )}
               </div>
 
               {retailer ? (
-                <div className="mt-4 space-y-3 text-sm">
+                <div className="mt-3 space-y-2.5 text-xs">
                   <div>
-                    <p className="font-semibold text-gray-950">
+                    <p className="font-bold text-sm text-[#242724]">
                       {retailer.shop_name}
                     </p>
-                    <p className="font-mono text-xs text-gray-500">
+                    <p className="font-mono text-[11px] text-[#969892]">
                       Code: {retailer.retailer_code}
                     </p>
                   </div>
 
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs text-gray-500">Proprietor</p>
-                    <p className="font-medium text-gray-900">
+                  <div className="border-t border-[#F0EFEA] pt-2">
+                    <p className="text-[11px] text-[#969892]">Proprietor</p>
+                    <p className="font-semibold text-[#242724]">
                       {retailer.owner_name}
                     </p>
-                    <p className="text-xs text-gray-600">{retailer.phone}</p>
+                    <p className="text-[11px] text-[#666864] font-mono">{retailer.phone}</p>
                   </div>
 
-                  <div className="border-t border-gray-100 pt-3">
-                    <p className="text-xs text-gray-500">Delivery Address</p>
-                    <p className="text-xs text-gray-700 leading-relaxed">
-                      {retailer.address}, {retailer.city}, {retailer.state} -{" "}
-                      {retailer.pincode}
+                  <div className="border-t border-[#F0EFEA] pt-2">
+                    <p className="text-[11px] text-[#969892]">Delivery Address</p>
+                    <p className="text-xs text-[#242724] leading-relaxed">
+                      {retailer.address}, {retailer.city}, {retailer.state} - {retailer.pincode}
                     </p>
                   </div>
                 </div>
               ) : (
-                <p className="mt-4 text-xs text-gray-500">
+                <p className="mt-3 text-xs text-[#666864]">
                   Retailer details not available.
                 </p>
               )}
             </div>
 
             {/* Credit Account Health */}
-            <div className="border border-gray-200 bg-white p-6">
-              <h3 className="text-base font-semibold text-gray-950">
-                Credit Status
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#969892]">
+                Credit Status & Risk
               </h3>
-              <p className="mt-0.5 text-xs text-gray-500">
-                Kirana credit limit & outstanding balance.
-              </p>
 
               {credit ? (
-                <div className="mt-4 space-y-3 text-sm">
+                <div className="mt-3 space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-gray-500 text-xs">Credit Limit</span>
-                    <span className="font-mono font-medium text-gray-900">
+                    <span className="text-[#666864]">Total Credit Limit</span>
+                    <span className="font-mono font-bold text-[#242724] tabular-nums">
                       {formatCurrency(credit.credit_limit)}
                     </span>
                   </div>
 
                   <div className="flex justify-between">
-                    <span className="text-gray-500 text-xs">Current Outstanding</span>
-                    <span className="font-mono font-medium text-gray-900">
+                    <span className="text-[#666864]">Current Outstanding</span>
+                    <span className="font-mono font-bold text-[#242724] tabular-nums">
                       {formatCurrency(credit.current_outstanding)}
                     </span>
                   </div>
 
-                  <div className="flex justify-between border-t border-gray-100 pt-2">
-                    <span className="text-gray-500 text-xs">Available Credit</span>
+                  <div className="flex justify-between border-t border-[#F0EFEA] pt-2">
+                    <span className="text-[#666864]">Available Credit</span>
                     <span
-                      className={`font-mono font-semibold ${
-                        isCreditShort ? "text-amber-700" : "text-emerald-700"
+                      className={`font-mono font-bold tabular-nums ${
+                        isCreditShort ? "text-[#8C2828]" : "text-[#205234]"
                       }`}
                     >
                       {formatCurrency(credit.available_credit)}
                     </span>
                   </div>
 
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>Payment Window</span>
-                    <span>{credit.payment_terms_days} days</span>
+                  <div className="flex justify-between text-[11px] text-[#969892]">
+                    <span>Payment Terms</span>
+                    <span>{credit.payment_terms_days} days Net</span>
                   </div>
 
                   {isCreditShort && (
-                    <div className="mt-3 border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                      Notice: Available credit ({formatCurrency(credit.available_credit)}) is lower than order value ({formatCurrency(order.total_amount)}).
+                    <div className="mt-3 rounded-[4px] border border-[#EDBCBC] bg-[#FBF0F0] p-2.5 text-[11px] text-[#8C2828] leading-relaxed">
+                      <strong>Credit Exception:</strong> Available credit ({formatCurrency(credit.available_credit)}) is lower than this order value ({formatCurrency(order.total_amount)}).
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="mt-4 text-xs text-gray-500">
+                <p className="mt-3 text-xs text-[#666864]">
                   No active credit account on record.
                 </p>
               )}
             </div>
 
             {/* Operational Policy Reminder */}
-            <div className="border border-gray-200 bg-gray-50 p-5">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Approval Checklist
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-[#FAF9F6] p-4 text-xs text-[#666864]">
+              <h4 className="font-bold text-[10px] uppercase tracking-wider text-[#969892]">
+                Operator Approval Checklist
               </h4>
-              <ul className="mt-3 space-y-2 text-xs text-gray-600 list-disc list-inside">
-                <li>Verify product stock across active warehouses.</li>
-                <li>Ensure free scheme quantities match active rules.</li>
-                <li>Check retailer credit exposure prior to approval.</li>
-                <li>Stock is committed only upon approval.</li>
+              <ul className="mt-2 space-y-1.5 list-disc list-inside">
+                <li>Depot case inventory checked</li>
+                <li>Trade promo multipliers validated</li>
+                <li>Credit exposure evaluated</li>
+                <li>Pick-list ready for loading</li>
               </ul>
             </div>
           </div>
         </div>
       </div>
+
       {/* Modal: Confirm Order Approval */}
       {showApproveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
-          <div className="w-full max-w-lg border border-gray-300 bg-white p-6 shadow-md">
-            <h3 className="text-lg font-semibold text-gray-950">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-[6px] border border-[#E7E6E0] bg-white p-6 shadow-xl">
+            <h3 className="text-base font-bold text-[#242724]">
               Confirm Order Approval
             </h3>
-            <p className="mt-1 text-xs text-gray-500">
-              Order {order.order_number} for {retailer?.shop_name || "Retailer"}.
+            <p className="mt-1 text-xs text-[#666864]">
+              Order <strong className="font-mono text-[#242724]">{order.order_number}</strong> for {retailer?.shop_name || "Retailer"}.
             </p>
 
-            <div className="mt-4 border-t border-b border-gray-100 py-3 space-y-2 text-xs">
+            <div className="mt-4 border-y border-[#E7E6E0] py-3 space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-gray-500">Order Grand Total:</span>
-                <span className="font-mono font-medium text-gray-950">
+                <span className="text-[#666864]">Order Grand Total:</span>
+                <span className="font-mono font-bold text-[#242724] tabular-nums">
                   {formatCurrency(order.total_amount)}
                 </span>
               </div>
               {credit && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Kirana Available Credit:</span>
-                  <span className="font-mono font-medium text-gray-950">
+                  <span className="text-[#666864]">Available Credit:</span>
+                  <span className="font-mono font-bold text-[#242724] tabular-nums">
                     {formatCurrency(credit.available_credit)}
                   </span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-gray-500">Line Items to Reserve:</span>
-                <span className="font-medium text-gray-950">
+                <span className="text-[#666864]">Line Items to Reserve:</span>
+                <span className="font-semibold text-[#242724]">
                   {items.length} SKUs ({items.reduce((acc, i) => acc + i.quantity + i.free_quantity, 0)} units)
                 </span>
               </div>
             </div>
 
             <div className="mt-4">
-              <label className="block text-xs font-medium text-gray-700">
-                Staff Note (Optional)
+              <label className="block text-xs font-semibold text-[#242724]">
+                Staff Approval Note (Optional)
               </label>
               <input
                 type="text"
                 value={approveNote}
                 onChange={(e) => setApproveNote(e.target.value)}
-                placeholder="e.g. Verified stock for dispatch"
-                className="mt-1 w-full border border-gray-300 px-3 py-2 text-xs text-gray-900 outline-none focus:border-gray-900"
+                placeholder="e.g. Stock confirmed at Jabalpur Depot, ready for morning truck"
+                className="mt-1.5 w-full rounded-[4px] border border-[#E7E6E0] px-3 py-2 text-xs text-[#242724] focus:border-[#79565D] focus:outline-none"
               />
             </div>
 
-            <div className="mt-3 bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-              Approving will immediately commit inventory reservations and debit the retailer&apos;s credit balance.
+            <div className="mt-3 rounded-[4px] border border-[#EED7B3] bg-[#FCF6EC] p-3 text-[11px] text-[#7A4E12]">
+              Approving will immediately commit warehouse inventory and post a debit to the retailer&apos;s ledger.
             </div>
 
             {actionError && (
-              <p className="mt-3 text-xs font-medium text-red-600">
+              <p className="mt-3 text-xs font-semibold text-[#8C2828]">
                 {actionError}
               </p>
             )}
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -838,7 +801,7 @@ function OrderDetailContent() {
                   setActionError(null);
                 }}
                 disabled={actionBusy}
-                className="border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-[4px] border border-[#E7E6E0] bg-white px-4 py-2 text-xs font-semibold text-[#666864] hover:bg-[#F0EFEA]"
               >
                 Cancel
               </button>
@@ -846,7 +809,7 @@ function OrderDetailContent() {
                 type="button"
                 onClick={handleApproveOrder}
                 disabled={actionBusy}
-                className="bg-emerald-700 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                className="rounded-[4px] bg-[#205234] px-4 py-2 text-xs font-bold text-white hover:bg-[#183F28] disabled:opacity-50 transition-colors shadow-2xs"
               >
                 {actionBusy ? "Approving..." : "Confirm & Approve"}
               </button>
@@ -857,29 +820,29 @@ function OrderDetailContent() {
 
       {/* Modal: Confirm Order Rejection */}
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
-          <div className="w-full max-w-lg border border-red-200 bg-white p-6 shadow-md">
-            <h3 className="text-lg font-semibold text-gray-950">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-[6px] border border-[#EDBCBC] bg-white p-6 shadow-xl">
+            <h3 className="text-base font-bold text-[#8C2828]">
               Reject Order
             </h3>
-            <p className="mt-1 text-xs text-gray-500">
-              Order {order.order_number} will be marked as REJECTED.
+            <p className="mt-1 text-xs text-[#666864]">
+              Order <strong className="font-mono text-[#242724]">{order.order_number}</strong> will be marked as REJECTED.
             </p>
 
             <div className="mt-4">
-              <label className="block text-xs font-medium text-gray-700">
+              <label className="block text-xs font-semibold text-[#242724]">
                 Reason for Rejection (Mandatory)
               </label>
               <textarea
                 rows={3}
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="State the reason (e.g. Insufficient stock, retailer account suspended, price mismatch)"
-                className="mt-1 w-full border border-gray-300 p-2.5 text-xs text-gray-900 outline-none focus:border-gray-900"
+                placeholder="State the reason (e.g. Insufficient depot stock, credit limit breached, shop unverified)"
+                className="mt-1.5 w-full rounded-[4px] border border-[#E7E6E0] p-2.5 text-xs text-[#242724] focus:border-[#8C2828] focus:outline-none"
               />
             </div>
 
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
               {[
                 "Insufficient warehouse stock",
                 "Retailer credit limit exceeded",
@@ -890,7 +853,7 @@ function OrderDetailContent() {
                   key={quickReason}
                   type="button"
                   onClick={() => setRejectReason(quickReason)}
-                  className="border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100"
+                  className="rounded-[3px] border border-[#E7E6E0] bg-[#FAF9F6] px-2 py-1 text-[11px] text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724]"
                 >
                   {quickReason}
                 </button>
@@ -898,12 +861,12 @@ function OrderDetailContent() {
             </div>
 
             {actionError && (
-              <p className="mt-3 text-xs font-medium text-red-600">
+              <p className="mt-3 text-xs font-semibold text-[#8C2828]">
                 {actionError}
               </p>
             )}
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -911,7 +874,7 @@ function OrderDetailContent() {
                   setActionError(null);
                 }}
                 disabled={actionBusy}
-                className="border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="rounded-[4px] border border-[#E7E6E0] bg-white px-4 py-2 text-xs font-semibold text-[#666864] hover:bg-[#F0EFEA]"
               >
                 Cancel
               </button>
@@ -919,7 +882,7 @@ function OrderDetailContent() {
                 type="button"
                 onClick={handleRejectOrder}
                 disabled={actionBusy || rejectReason.trim().length < 3}
-                className="bg-red-700 px-4 py-2 text-xs font-medium text-white hover:bg-red-800 disabled:opacity-40"
+                className="rounded-[4px] bg-[#8C2828] px-4 py-2 text-xs font-bold text-white hover:bg-[#681C1C] disabled:opacity-40 transition-colors shadow-2xs"
               >
                 {actionBusy ? "Rejecting..." : "Confirm Rejection"}
               </button>
@@ -935,9 +898,9 @@ export default function OrderDetailPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-gray-50 p-8">
+        <main className="min-h-screen bg-[#F6F5F1] p-8">
           <div className="mx-auto max-w-7xl">
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-[#666864]">
               Loading order review details...
             </p>
           </div>

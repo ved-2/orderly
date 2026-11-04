@@ -13,6 +13,7 @@ export interface CartItem {
   quantity_available: number;
   quantity: number;
   quantity_unit: QuantityUnit;
+  image_url?: string | null;
 }
 
 const CART_KEY = "orderly_cart_v1";

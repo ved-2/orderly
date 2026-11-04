@@ -1,69 +1,261 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  Store,
+  Inbox,
+  Building2,
+  Users,
+  ShieldCheck,
+  ArrowRight,
+  Package,
+  Wallet,
+  Truck,
+  CheckCircle2,
+  FileSpreadsheet,
+} from "lucide-react";
+
+import { useAuth } from "@/contexts/auth-context";
+import { apiRequest } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+
+interface UserProfile {
+  role: string;
+  retailer_id: string | null;
+}
 
 export default function Home() {
+  const router = useRouter();
+  const { user, loading } = useAuth();
+  const [checkingRole, setCheckingRole] = useState(false);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (user) {
+      setCheckingRole(true);
+      apiRequest<UserProfile>("/auth/me")
+        .then((profile) => {
+          if (profile.role === "DISTRIBUTOR_ADMIN") {
+            router.replace("/distributor");
+          } else if (profile.role === "ORDER_DESK") {
+            router.replace("/order-desk");
+          } else if (profile.role === "SALESMAN") {
+            router.replace("/salesman");
+          } else if (profile.retailer_id) {
+            router.replace("/retailer/dashboard");
+          } else {
+            router.replace("/register");
+          }
+        })
+        .catch(() => {
+          setCheckingRole(false);
+        });
+    }
+  }, [user, loading, router]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <div className="min-h-screen bg-[#F6F5F1] text-[#242724] flex flex-col justify-between">
+      {/* Top Header */}
+      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white/90 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white">
+              <Store size={15} />
+            </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-base font-bold tracking-tight text-[#242724]">
+                orderly<span className="text-[#79565D]">.</span>
+              </span>
+              <span className="hidden sm:inline-block text-[10px] font-semibold uppercase tracking-wider text-[#969892] border-l border-[#E7E6E0] pl-2">
+                Jabalpur FMCG Depot
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href="/register"
+              className="rounded-[4px] bg-[#79565D] px-4 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[#67474E] transition-colors"
+            >
+              Sign In / Register
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Hero & Role Portals */}
+      <main className="mx-auto max-w-5xl px-4 sm:px-6 py-12 sm:py-16">
+        {/* Hub Context Hero */}
+        <div className="text-center max-w-2xl mx-auto">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#E7E6E0] bg-white px-3 py-1 text-[11px] font-semibold text-[#666864] shadow-2xs mb-4">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#205234]" />
+            <span>Serving 1,800 Kirana Retailers across Jabalpur</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[#242724] leading-tight">
+            Distributor-Led FMCG Commerce Platform
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-3 text-xs sm:text-sm text-[#666864] leading-relaxed">
+            Orderly bridges kirana shopkeepers directly with distributor warehouses. Wholesale case rates, guaranteed delivery, trade scheme multipliers, and Tally ERP sync.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        {/* 4 Core Roles Grid */}
+        <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* 1. Retailer Portal */}
+          <Link
+            href="/retailer/catalogue"
+            className="group rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs hover:border-[#79565D] transition-all flex flex-col justify-between"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-[4px] bg-[#F4EFF0] text-[#79565D]">
+                  <Store size={18} />
+                </div>
+                <Badge variant="accent" className="text-[10px]">
+                  Kirana Mobile-First
+                </Badge>
+              </div>
+              <h2 className="mt-3.5 font-bold text-base text-[#242724]">
+                Kirana Retailer Portal
+              </h2>
+              <p className="mt-1 text-xs text-[#666864] leading-relaxed">
+                Wholesale catalogue across 4 FMCG brands, case-pricing calculations, live promotions (10+1 free), and 1-click repeat orders.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-[#F0EFEA] flex items-center justify-between text-xs font-semibold text-[#79565D]">
+              <span>Shop Catalogue & Orders</span>
+              <ArrowRight
+                size={14}
+                className="transition-transform group-hover:translate-x-1"
+              />
+            </div>
+          </Link>
+
+          {/* 2. Order Desk Workstation */}
+          <Link
+            href="/order-desk"
+            className="group rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs hover:border-[#79565D] transition-all flex flex-col justify-between"
           >
-            Documentation
-          </a>
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-[4px] bg-[#EEF6F1] text-[#205234]">
+                  <Inbox size={18} />
+                </div>
+                <Badge variant="success" className="text-[10px]">
+                  Operational Terminal
+                </Badge>
+              </div>
+              <h2 className="mt-3.5 font-bold text-base text-[#242724]">
+                Order Desk Workstation
+              </h2>
+              <p className="mt-1 text-xs text-[#666864] leading-relaxed">
+                High-density queue for verifying line items, checking kirana credit limits, locking warehouse inventory, and approving dispatches.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-[#F0EFEA] flex items-center justify-between text-xs font-semibold text-[#205234]">
+              <span>Open Order Queue</span>
+              <ArrowRight
+                size={14}
+                className="transition-transform group-hover:translate-x-1"
+              />
+            </div>
+          </Link>
+
+          {/* 3. Distributor Console */}
+          <Link
+            href="/distributor"
+            className="group rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs hover:border-[#79565D] transition-all flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-[4px] bg-[#EFF5FB] text-[#1E4B72]">
+                  <Building2 size={18} />
+                </div>
+                <Badge variant="info" className="text-[10px]">
+                  Admin & ERP
+                </Badge>
+              </div>
+              <h2 className="mt-3.5 font-bold text-base text-[#242724]">
+                Distributor Administration
+              </h2>
+              <p className="mt-1 text-xs text-[#666864] leading-relaxed">
+                SKU master management, Buy-X-Get-Y trade schemes, kirana verification, credit sanctions, and Tally Prime accounting export.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-[#F0EFEA] flex items-center justify-between text-xs font-semibold text-[#1E4B72]">
+              <span>Management Console</span>
+              <ArrowRight
+                size={14}
+                className="transition-transform group-hover:translate-x-1"
+              />
+            </div>
+          </Link>
+
+          {/* 4. Salesman Beat App */}
+          <Link
+            href="/salesman"
+            className="group rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs hover:border-[#79565D] transition-all flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-[4px] bg-[#FCF6EC] text-[#7A4E12]">
+                  <Users size={18} />
+                </div>
+                <Badge variant="warning" className="text-[10px]">
+                  Beat App
+                </Badge>
+              </div>
+              <h2 className="mt-3.5 font-bold text-base text-[#242724]">
+                Field Salesman Beat Entry
+              </h2>
+              <p className="mt-1 text-xs text-[#666864] leading-relaxed">
+                Route ordering for field representatives taking orders at kirana counters with live offline queueing and case rate calculations.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-[#F0EFEA] flex items-center justify-between text-xs font-semibold text-[#7A4E12]">
+              <span>Field Beat Portal</span>
+              <ArrowRight
+                size={14}
+                className="transition-transform group-hover:translate-x-1"
+              />
+            </div>
+          </Link>
+        </div>
+
+        {/* Operating Pillars */}
+        <div className="mt-12 rounded-[6px] border border-[#E7E6E0] bg-white p-6 shadow-2xs">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#969892] mb-3">
+            <ShieldCheck size={16} className="text-[#79565D]" />
+            <span>Depot Architecture</span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3 text-xs text-[#666864]">
+            <div>
+              <strong className="text-[#242724] block mb-0.5">Accurate Case Pricing</strong>
+              Calculated dynamically via units-per-case packaging so wholesale arithmetic matches down to the paisa.
+            </div>
+            <div>
+              <strong className="text-[#242724] block mb-0.5">Transactional Credit Controls</strong>
+              Stock reservations and ledger balances are committed only upon explicit Order Desk review.
+            </div>
+            <div>
+              <strong className="text-[#242724] block mb-0.5">Tally Accounting Interop</strong>
+              Export approved orders directly formatted for seamless Tally ERP 9 and Tally Prime reconciliation.
+            </div>
+          </div>
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-[#E7E6E0] bg-white py-4 px-4 sm:px-6">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#969892]">
+          <span>Orderlyy FMCG Commerce Engine · Jabalpur Operations</span>
+          <span>Single-Distributor Deployment · Multi-Tenant Ready</span>
+        </div>
+      </footer>
     </div>
   );
 }

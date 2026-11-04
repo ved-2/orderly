@@ -1,32 +1,34 @@
 export function CatalogueLoading() {
   return (
-    <div className="min-h-screen bg-[#f7f7f5] px-4 py-5 text-neutral-900 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-[#F6F5F1] px-4 py-6 text-[#242724] sm:px-6">
       <header className="mb-6">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-neutral-500">
-          Orderly / Retailer
+        <p className="text-[10px] font-bold uppercase tracking-widest text-[#969892]">
+          Kirana Ordering &bull; Master Catalogue
         </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-          Product catalogue
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+          Product Catalogue
         </h1>
-        <p className="mt-2 text-sm text-neutral-600" role="status">
-          Loading products and your prices...
+        <p className="mt-1 text-xs text-[#666864]" role="status">
+          Loading depot products, stock availability, and trade schemes...
         </p>
       </header>
 
-      <div className="mb-6 h-[58px] animate-pulse border border-neutral-200 bg-white" />
+      <div className="mb-6 h-12 animate-pulse rounded-[4px] border border-[#E7E6E0] bg-[#FFFFFF]" />
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {[...Array(6)].map((_, index) => (
           <div
             key={index}
-            className="flex items-center justify-between gap-4 border border-neutral-200 bg-white p-4"
+            className="flex flex-col justify-between gap-3 rounded-[6px] border border-[#E7E6E0] bg-[#FFFFFF] p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
           >
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className="h-4 w-2/5 animate-pulse bg-neutral-200" />
-              <div className="h-3 w-1/4 animate-pulse bg-neutral-100" />
-              <div className="h-3 w-1/3 animate-pulse bg-neutral-100" />
+            <div className="flex items-start gap-3">
+              <div className="h-14 w-14 shrink-0 animate-pulse rounded-[4px] bg-[#F0EFEA]" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-3/4 animate-pulse rounded bg-[#EAE8E0]" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-[#F0EFEA]" />
+              </div>
             </div>
-            <div className="h-9 w-28 shrink-0 animate-pulse bg-neutral-100" />
+            <div className="mt-2 h-8 w-full animate-pulse rounded bg-[#F0EFEA]" />
           </div>
         ))}
       </div>

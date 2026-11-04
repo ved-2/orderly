@@ -212,18 +212,18 @@ export default function StaffManagementPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
+      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
           <div className="flex items-center gap-3">
             <Link
               href="/distributor"
-              className="text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-900"
+              className="text-xs font-semibold uppercase tracking-wider text-[#666864] hover:text-[#242724] transition-colors"
             >
               &larr; Control Center
             </Link>
-            <span className="text-gray-300">/</span>
-            <h1 className="text-xl font-semibold text-gray-950">
+            <span className="text-[#E7E6E0]">/</span>
+            <h1 className="text-sm font-bold text-[#242724]">
               Staff & Salesmen Access Management
             </h1>
           </div>
@@ -235,7 +235,7 @@ export default function StaffManagementPage() {
               setGeneratedLink(null);
               setError(null);
             }}
-            className="border border-gray-900 bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800"
+            className="rounded-[4px] bg-[#79565D] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
           >
             + Invite Staff Member
           </button>

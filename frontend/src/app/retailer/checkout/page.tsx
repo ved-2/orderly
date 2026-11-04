@@ -3,13 +3,27 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Package,
+  ShieldCheck,
+  Store,
+  Truck,
+  ShoppingBag,
+} from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
 import { clearCart, getCart, type CartItem } from "@/lib/cart";
+import { Badge } from "@/components/ui/badge";
+import { ProductThumbnail } from "@/components/ui/product-thumbnail";
 
 interface RetailerProfile {
   retailer_id: string | null;
+  shop_name?: string;
 }
 
 interface OrderDraftResponse {
@@ -32,11 +46,20 @@ interface OrderSubmissionResponse {
   message: string;
 }
 
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export default function RetailerCheckoutPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
 
   const [retailerId, setRetailerId] = useState<string | null>(null);
+  const [shopName, setShopName] = useState<string>("");
   const [items, setItems] = useState<CartItem[]>([]);
   const [customerNote, setCustomerNote] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -60,12 +83,13 @@ export default function RetailerCheckoutPage() {
       try {
         const profile = await apiRequest<RetailerProfile>("/auth/me");
         setRetailerId(profile.retailer_id);
+        if (profile.shop_name) setShopName(profile.shop_name);
         setItems(getCart());
       } catch (loadError) {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Unable to load checkout.",
+            : "Unable to load checkout."
         );
       } finally {
         setIsLoading(false);
@@ -81,11 +105,17 @@ export default function RetailerCheckoutPage() {
     return total + item.price * item.quantity * multiplier;
   }, 0);
 
+  const totalPacks = items.reduce((total, item) => {
+    const multiplier =
+      item.quantity_unit === "CASE" ? item.units_per_case : 1;
+    return total + item.quantity * multiplier;
+  }, 0);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!retailerId) {
-      setError("No retailer account is linked to this user.");
+      setError("No verified kirana retailer account is linked to this login.");
       return;
     }
 
@@ -115,20 +145,19 @@ export default function RetailerCheckoutPage() {
               quantity_unit: item.quantity_unit,
             })),
           }),
-        },
+        }
       );
 
       if (createdOrder.status !== "DRAFT") {
         throw new Error("Unexpected order status received from server.");
       }
 
-      const submittedOrder =
-        await apiRequest<OrderSubmissionResponse>(
-          `/orders/${createdOrder.id}/submit`,
-          {
-            method: "POST",
-          },
-        );
+      const submittedOrder = await apiRequest<OrderSubmissionResponse>(
+        `/orders/${createdOrder.id}/submit`,
+        {
+          method: "POST",
+        }
+      );
 
       if (submittedOrder.status !== "SUBMITTED") {
         throw new Error("Order submission could not be confirmed.");
@@ -144,7 +173,7 @@ export default function RetailerCheckoutPage() {
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to submit your order.",
+          : "Unable to submit your order to the distributor."
       );
     } finally {
       setIsSubmitting(false);
@@ -153,28 +182,40 @@ export default function RetailerCheckoutPage() {
 
   if (loading || isLoading) {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
-        <p className="text-sm text-gray-500">Loading checkout...</p>
-      </main>
+      <div className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-6">
+        <div className="h-8 w-48 animate-pulse rounded bg-[#E7E6E0]" />
+        <div className="mt-6 h-64 animate-pulse rounded bg-[#E7E6E0]" />
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-      <div className="mb-8">
-        <p className="text-sm text-gray-500">Retailer / Checkout</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">
-          Review your order
+    <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
+      {/* Header */}
+      <div className="mb-6 border-b border-[#E7E6E0] pb-5">
+        <div className="flex items-center gap-2 text-xs font-medium text-[#666864]">
+          <Link
+            href="/retailer/cart"
+            className="inline-flex items-center gap-1 hover:text-[#242724] transition-colors"
+          >
+            <ArrowLeft size={13} />
+            <span>Return to Basket</span>
+          </Link>
+          <span>/</span>
+          <span className="text-[#242724]">Checkout</span>
+        </div>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+          Order Confirmation & Review
         </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Prices, stock and schemes are verified by the server when you submit.
+        <p className="mt-0.5 text-xs text-[#666864]">
+          Verify item lines, packing cases, and delivery remarks before final transmission to the Jabalpur distributor depot.
         </p>
       </div>
 
       {error && (
         <div
           role="alert"
-          className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          className="mb-5 rounded-[4px] border border-[#EDBCBC] bg-[#FBF0F0] px-4 py-3 text-xs font-medium text-[#8C2828]"
         >
           {error}
         </div>
@@ -183,117 +224,235 @@ export default function RetailerCheckoutPage() {
       {!retailerId && !order && items.length > 0 && (
         <div
           role="alert"
-          className="mb-5 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          className="mb-5 rounded-[4px] border border-[#EED7B3] bg-[#FCF6EC] px-4 py-3 text-xs font-medium text-[#7A4E12]"
         >
-          No retailer account is linked to this user. Please complete retailer
-          registration before placing an order.
+          No active retailer account is linked to this user. Please complete retailer registration or wait for distributor verification before submitting.
         </div>
       )}
 
       {order ? (
-        <section className="border border-green-200 bg-white p-5 sm:p-6">
-          <p className="text-sm font-medium text-green-700">
-            Order submitted successfully
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-gray-950">
-            {order.order_number}
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Status: {order.status}
-          </p>
-          <p className="mt-1 text-sm text-gray-600">
-            Server-calculated total: ₹{Number(order.total_amount).toFixed(2)}
-          </p>
-          <Link
-            href="/retailer/catalogue"
-            className="mt-6 inline-block bg-gray-900 px-5 py-3 text-sm font-medium text-white hover:bg-gray-800"
-          >
-            Continue shopping
-          </Link>
-        </section>
-      ) : items.length === 0 ? (
-        <section className="border border-gray-200 bg-white px-6 py-12 text-center">
-          <h2 className="font-semibold text-gray-950">Your cart is empty</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            Add products to your cart before checking out.
-          </p>
-          <Link
-            href="/retailer/catalogue"
-            className="mt-6 inline-block bg-gray-900 px-5 py-3 text-sm font-medium text-white hover:bg-gray-800"
-          >
-            Browse catalogue
-          </Link>
-        </section>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <section className="divide-y divide-gray-200 border border-gray-200 bg-white">
-            {items.map((item) => {
-              const multiplier =
-                item.quantity_unit === "CASE" ? item.units_per_case : 1;
-              const lineTotal = item.price * item.quantity * multiplier;
-
-              return (
-                <article
-                  key={`${item.product_id}-${item.quantity_unit}`}
-                  className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5"
-                >
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      {item.brand_name} · {item.sku}
-                    </p>
-                    <h2 className="mt-1 font-medium text-gray-950">
-                      {item.name}
-                    </h2>
-                    <p className="mt-1 text-sm text-gray-600">
-                      {item.quantity} {item.quantity_unit.toLowerCase()}
-                      {item.quantity > 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  <p className="font-semibold text-gray-950">
-                    ₹{lineTotal.toFixed(2)}
-                  </p>
-                </article>
-              );
-            })}
-          </section>
-
-          <section className="border border-gray-200 bg-white p-4 sm:p-5">
-            <label
-              htmlFor="customer-note"
-              className="block text-sm font-medium text-gray-800"
-            >
-              Note for the distributor (optional)
-            </label>
-            <textarea
-              id="customer-note"
-              value={customerNote}
-              onChange={(event) => setCustomerNote(event.target.value)}
-              maxLength={1000}
-              rows={4}
-              className="mt-2 w-full border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900"
-              placeholder="Add delivery or order instructions"
-            />
-          </section>
-
-          <section className="border border-gray-200 bg-white p-4 sm:p-5">
-            <div className="flex justify-between font-semibold text-gray-950">
-              <span>Cart estimate</span>
-              <span>₹{subtotal.toFixed(2)}</span>
+        /* Order Placed Success View */
+        <div className="rounded-[6px] border border-[#C3DEC9] bg-white p-6 sm:p-8 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF6F1] text-[#205234]">
+              <CheckCircle2 size={22} />
             </div>
-            <p className="mt-2 text-xs leading-5 text-gray-500">
-              This is a cart snapshot only. The server recalculates the final
-              price, tax, schemes and stock for the order.
-            </p>
-            <button
-              type="submit"
-              disabled={!retailerId || isSubmitting}
-              className="mt-5 w-full bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#205234]">
+                Order Successfully Dispatched
+              </p>
+              <h2 className="text-xl font-bold font-mono tracking-tight text-[#242724]">
+                {order.order_number}
+              </h2>
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 border-y border-[#E7E6E0] py-4 text-xs">
+            <div>
+              <span className="text-[#969892]">Queue Status</span>
+              <p className="mt-0.5 font-bold text-[#205234]">
+                SUBMITTED · READY FOR DESK
+              </p>
+            </div>
+            <div>
+              <span className="text-[#969892]">Assigned Depot</span>
+              <p className="mt-0.5 font-semibold text-[#242724]">
+                Jabalpur Central FMCG Depot
+              </p>
+            </div>
+            <div>
+              <span className="text-[#969892]">Recalculated Order Total</span>
+              <p className="mt-0.5 font-bold font-mono text-[#242724] tabular-nums text-sm">
+                {formatCurrency(Number(order.total_amount))}
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs leading-relaxed text-[#666864]">
+            Your order draft has been logged into the Order Desk workstation queue. The distributor will check warehouse stock reserves, apply applicable brand schemes, and schedule truck dispatch.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href="/retailer/orders"
+              className="inline-flex items-center gap-2 rounded-[4px] bg-[#242724] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#383B38] transition-colors shadow-2xs"
             >
-              {isSubmitting ? "Submitting order..." : "Place order"}
-            </button>
-          </section>
+              <ShoppingBag size={14} />
+              View in My Orders
+            </Link>
+            <Link
+              href="/retailer/catalogue"
+              className="inline-flex items-center gap-2 rounded-[4px] border border-[#E7E6E0] bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-[#242724] hover:bg-[#F0EFEA] transition-colors"
+            >
+              <Package size={14} />
+              Continue Shopping
+            </Link>
+          </div>
+        </div>
+      ) : items.length === 0 ? (
+        /* Empty Checkout */
+        <div className="rounded-[6px] border border-[#E7E6E0] bg-white px-6 py-16 text-center shadow-2xs">
+          <h2 className="text-base font-bold text-[#242724]">No items to checkout</h2>
+          <p className="mt-1 text-xs text-[#666864]">
+            Your basket is currently empty. Add products from the catalogue first.
+          </p>
+          <Link
+            href="/retailer/catalogue"
+            className="mt-5 inline-flex items-center gap-2 rounded-[4px] bg-[#79565D] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors"
+          >
+            <Package size={14} />
+            Browse Catalogue
+          </Link>
+        </div>
+      ) : (
+        /* Checkout Form & Review */
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+          {/* Main Review Column */}
+          <div className="space-y-4">
+            {/* Depot & Retailer Banner */}
+            <div className="flex items-center justify-between rounded-[4px] border border-[#E7E6E0] bg-[#F4EFF0] px-4 py-3 text-xs">
+              <div className="flex items-center gap-2 text-[#67474E]">
+                <Store size={15} />
+                <span className="font-semibold">
+                  {shopName || "Kirana Account"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#67474E]">
+                <Truck size={13} />
+                <span>Delivery: Depot Delivery Truck</span>
+              </div>
+            </div>
+
+            {/* Line Items Card */}
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white shadow-2xs overflow-hidden">
+              <div className="border-b border-[#E7E6E0] bg-[#FAF9F6] px-4 py-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#969892]">
+                  Order Items ({items.length})
+                </span>
+              </div>
+
+              <div className="divide-y divide-[#E7E6E0]">
+                {items.map((item) => {
+                  const isCase = item.quantity_unit === "CASE";
+                  const multiplier = isCase ? item.units_per_case : 1;
+                  const caseRate = item.price * item.units_per_case;
+                  const lineTotal = item.price * item.quantity * multiplier;
+
+                  return (
+                    <article
+                      key={`${item.product_id}-${item.quantity_unit}`}
+                      className="p-4 flex items-center justify-between gap-4"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <ProductThumbnail
+                          name={item.name}
+                          brandName={item.brand_name}
+                          imageUrl={item.image_url}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold text-[#969892] uppercase">
+                            {item.brand_name} · {item.sku}
+                          </p>
+                          <h3 className="font-bold text-xs text-[#242724] truncate">
+                            {item.name}
+                          </h3>
+                          <p className="text-[11px] text-[#666864]">
+                            {item.quantity} {item.quantity_unit}
+                            {isCase && (
+                              <span className="text-[#969892]">
+                                {" "}({item.quantity * item.units_per_case} packs)
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <p className="font-bold text-xs text-[#242724] tabular-nums">
+                          {formatCurrency(lineTotal)}
+                        </p>
+                        <p className="text-[10px] text-[#969892] tabular-nums">
+                          {isCase ? `${formatCurrency(caseRate)}/cs` : `${formatCurrency(item.price)}/pc`}
+                        </p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Delivery Instructions */}
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 shadow-2xs">
+              <label
+                htmlFor="customer-note"
+                className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#242724]"
+              >
+                <FileText size={13} className="text-[#79565D]" />
+                <span>Delivery or Invoice Remarks (Optional)</span>
+              </label>
+              <textarea
+                id="customer-note"
+                value={customerNote}
+                onChange={(e) => setCustomerNote(e.target.value)}
+                maxLength={1000}
+                rows={3}
+                className="mt-2 w-full rounded-[4px] border border-[#E7E6E0] bg-[#FBFBFA] px-3 py-2 text-xs text-[#242724] placeholder-[#969892] focus:border-[#79565D] focus:bg-white focus:outline-none"
+                placeholder="e.g., Deliver before 2 PM, unload near grocery counter, urgent salt restock..."
+              />
+            </div>
+          </div>
+
+          {/* Right Summary Sidebar */}
+          <aside className="space-y-4">
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[#969892]">
+                Order Total Estimate
+              </h2>
+
+              <div className="mt-4 space-y-2 text-xs">
+                <div className="flex justify-between text-[#666864]">
+                  <span>Total Packs</span>
+                  <span className="font-mono font-semibold text-[#242724] tabular-nums">
+                    {totalPacks}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#666864]">
+                  <span>Subtotal</span>
+                  <span className="font-mono font-semibold text-[#242724] tabular-nums">
+                    {formatCurrency(subtotal)}
+                  </span>
+                </div>
+
+                <div className="border-t border-[#E7E6E0] pt-2.5">
+                  <div className="flex justify-between items-baseline font-bold text-[#242724]">
+                    <span>Estimated Total</span>
+                    <span className="text-base font-mono tabular-nums">
+                      {formatCurrency(subtotal)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-[4px] border border-[#E7E6E0] bg-[#F6F5F1] p-3 text-[11px] leading-relaxed text-[#666864]">
+                <div className="flex items-center gap-1 font-semibold text-[#242724] mb-1">
+                  <Clock size={13} className="text-[#79565D]" />
+                  <span>Desk Review</span>
+                </div>
+                Trade discounts, 10+1 free bottle promotions, and credit clearance will be computed directly by the Order Desk.
+              </div>
+
+              <button
+                type="submit"
+                disabled={!retailerId || isSubmitting}
+                className="mt-5 w-full rounded-[4px] bg-[#79565D] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-2xs hover:bg-[#67474E] disabled:cursor-not-allowed disabled:bg-[#D5D3CB] transition-colors"
+              >
+                {isSubmitting ? "Submitting to Depot..." : "Confirm & Send Order"}
+              </button>
+            </div>
+          </aside>
         </form>
       )}
-    </main>
+    </div>
   );
 }

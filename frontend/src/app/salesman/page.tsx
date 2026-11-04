@@ -411,9 +411,9 @@ export default function SalesmanPortalPage() {
   });
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-900 pb-28">
+    <main className="min-h-screen bg-[#F6F5F1] text-[#242724] pb-28">
       {/* 1. Mobile Header & Sync Bar */}
-      <header className="sticky top-0 z-30 border-b border-gray-200 bg-white px-4 py-2.5 shadow-xs">
+      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white px-4 py-2.5 shadow-2xs">
         <div className="flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold tracking-wider uppercase text-gray-400">

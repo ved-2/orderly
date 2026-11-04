@@ -312,19 +312,19 @@ export default function RetailersAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
       {/* Top Header */}
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
           <div className="flex items-center gap-3">
             <Link
               href="/distributor"
-              className="text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-900"
+              className="text-xs font-semibold uppercase tracking-wider text-[#666864] hover:text-[#242724] transition-colors"
             >
               &larr; Control Center
             </Link>
-            <span className="text-gray-300">/</span>
-            <h1 className="text-xl font-semibold text-gray-950">
+            <span className="text-[#E7E6E0]">/</span>
+            <h1 className="text-sm font-bold text-[#242724]">
               Retailer Network & Credit
             </h1>
           </div>

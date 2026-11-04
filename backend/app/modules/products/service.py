@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
@@ -5,6 +6,7 @@ from app.modules.inventory.models import Inventory
 from app.modules.products.models import Product, Brand
 from app.modules.retailers.models import RetailerUser, Retailer
 from app.modules.pricing.service import get_retailer_product_prices
+from app.modules.schemes.models import Scheme, SchemeRule
 
 
 def get_retailer_catalogue(
@@ -86,6 +88,31 @@ def get_retailer_catalogue(
         for product_id, quantity_on_hand, quantity_reserved in inventory_rows
     }
 
+    # Preload active schemes for products
+    now = datetime.now(timezone.utc)
+    scheme_rules = db.execute(
+        select(SchemeRule, Scheme.name.label("scheme_name"), Scheme.scheme_type)
+        .join(Scheme, Scheme.id == SchemeRule.scheme_id)
+        .where(
+            SchemeRule.product_id.in_(product_ids),
+            Scheme.is_active.is_(True),
+            Scheme.valid_from <= now,
+            Scheme.valid_to > now,
+        )
+    ).all() if product_ids else []
+
+    scheme_map = {}
+    for rule, scheme_name, scheme_type in scheme_rules:
+        scheme_map.setdefault(rule.product_id, []).append({
+            "scheme_name": scheme_name,
+            "scheme_type": scheme_type,
+            "buy_quantity": float(rule.buy_quantity) if rule.buy_quantity else None,
+            "reward_quantity": float(rule.reward_quantity) if rule.reward_quantity else None,
+            "min_quantity": float(rule.min_quantity) if rule.min_quantity else None,
+            "discount_type": rule.discount_type,
+            "discount_value": float(rule.discount_value) if rule.discount_value else None,
+        })
+
     items = []
 
     for product, brand_name in products:
@@ -120,6 +147,7 @@ def get_retailer_catalogue(
             "quantity_on_hand": quantity_on_hand,
             "quantity_reserved": quantity_reserved,
             "quantity_available": quantity_available,
+            "schemes": scheme_map.get(product.id, []),
         })
 
     return {

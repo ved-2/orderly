@@ -119,26 +119,26 @@ function InvitationAcceptanceContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <p className="text-sm text-gray-500">Verifying staff invitation...</p>
+      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-6">
+        <p className="text-xs text-[#666864]">Verifying staff invitation...</p>
       </main>
     );
   }
 
   if (error || !invitation) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-md border border-red-200 bg-white p-6 shadow-xs">
-          <h1 className="text-lg font-semibold text-red-950">
+      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-6 text-center shadow-2xs">
+          <h1 className="text-sm font-bold text-[#8C2828]">
             Invitation Expired or Invalid
           </h1>
-          <p className="mt-2 text-sm text-red-700 leading-relaxed">
+          <p className="mt-1 text-xs text-[#8C2828] leading-relaxed">
             {error || "This invitation link cannot be used. Please ask your distributor administrator for a new invite."}
           </p>
-          <div className="mt-6">
+          <div className="mt-5">
             <Link
               href="/"
-              className="inline-block border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-800 hover:bg-gray-50"
+              className="inline-block rounded-[4px] border border-[#E7E6E0] bg-white px-4 py-2 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA]"
             >
               &larr; Return to Home
             </Link>
@@ -149,8 +149,8 @@ function InvitationAcceptanceContent() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-      <div className="w-full max-w-md border border-gray-200 bg-white p-8 shadow-xs">
+    <main className="min-h-screen bg-[#F6F5F1] text-[#242724] flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-[6px] border border-[#E7E6E0] bg-white p-8 shadow-2xs">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
             Orderly Staff Workspace
