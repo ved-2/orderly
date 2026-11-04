@@ -1,4 +1,4 @@
-from app.modules.users.models import User
+from app.modules.users.models import User, StaffInvitation
 from app.modules.retailers.models import (
     Retailer,
     RetailerUser,
@@ -39,6 +39,7 @@ from app.modules.pricing.default_price_models import DistributorProductPrice
 
 __all__ = [
     "User",
+    "StaffInvitation",
     "Retailer",
     "RetailerUser",
     "RetailerAssignment",

@@ -11,7 +11,10 @@ from app.api.deps import (
     get_db,
     get_verified_firebase_identity,
 )
-from app.modules.users.models import User
+from datetime import datetime, timezone
+import hashlib
+from app.modules.users.models import User, StaffInvitation
+from fastapi import HTTPException, status
 from app.modules.retailers.models import RetailerUser, Retailer
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -92,4 +95,113 @@ def register_distributor_admin(
         "email": user.email,
         "role": user.role,
         "message": "Distributor administrator registered successfully.",
+    }
+
+@router.get("/invitations/{token}")
+def get_invitation_info(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    invitation = db.scalar(
+        select(StaffInvitation).where(StaffInvitation.token_hash == token_hash)
+    )
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation token is invalid or does not exist.",
+        )
+
+    if invitation.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This invitation has already been redeemed.",
+        )
+
+    now = datetime.now(timezone.utc)
+    if invitation.expires_at < now:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This invitation has expired. Please contact the administrator for a new invite.",
+        )
+
+    return {
+        "email": invitation.email,
+        "role": invitation.role,
+        "expires_at": invitation.expires_at,
+        "is_valid": True,
+    }
+
+
+@router.post("/invitations/{token}/accept")
+def accept_staff_invitation(
+    token: str,
+    identity: dict = Depends(get_verified_firebase_identity),
+    db: Session = Depends(get_db),
+):
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    invitation = db.scalar(
+        select(StaffInvitation)
+        .where(StaffInvitation.token_hash == token_hash)
+        .with_for_update()
+    )
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation token is invalid.",
+        )
+
+    if invitation.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This invitation has already been redeemed.",
+        )
+
+    now = datetime.now(timezone.utc)
+    if invitation.expires_at < now:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This invitation has expired.",
+        )
+
+    caller_email = identity["email"].strip().lower()
+    if caller_email != invitation.email.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Email mismatch. This invitation was issued to '{invitation.email}', "
+                f"but you are signed in as '{caller_email}'."
+            ),
+        )
+
+    firebase_uid = identity["firebase_uid"]
+    user = db.scalar(
+        select(User).where(
+            (User.firebase_uid == firebase_uid)
+            | (func.lower(User.email) == caller_email)
+        )
+    )
+
+    if user is None:
+        user = User(
+            firebase_uid=firebase_uid,
+            email=caller_email,
+            role=invitation.role,
+            is_active=True,
+        )
+        db.add(user)
+    else:
+        user.role = invitation.role
+        user.is_active = True
+        user.firebase_uid = firebase_uid
+
+    invitation.used_at = now
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "message": f"Successfully joined Orderly as {user.role}.",
     }

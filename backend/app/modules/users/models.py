@@ -1,7 +1,7 @@
-
 import uuid
 
-from sqlalchemy import Boolean, DateTime, String, func
+from datetime import datetime
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Uuid
 
@@ -60,3 +60,52 @@ class User(Base):
     nullable=False,
     index=True,
 )
+
+class StaffInvitation(Base):
+    __tablename__ = "staff_invitations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    email: Mapped[str] = mapped_column(
+        String(255),
+        index=True,
+        nullable=False,
+    )
+
+    role: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(128),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    invited_by: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )

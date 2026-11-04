@@ -98,6 +98,11 @@ export default function RegisterPage() {
         return;
       }
 
+      if (profile.role === "SALESMAN") {
+        window.location.replace("/salesman");
+        return;
+      }
+
       if (profile.retailer_id) {
         window.location.replace("/retailer/dashboard");
         return;
