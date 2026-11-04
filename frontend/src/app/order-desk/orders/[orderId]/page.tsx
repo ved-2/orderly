@@ -17,6 +17,7 @@ interface OrderData {
   tax_amount: number;
   total_amount: number;
   customer_note?: string | null;
+  desk_note?: string | null;
   created_at: string;
   submitted_at?: string | null;
   approved_at?: string | null;
@@ -97,6 +98,13 @@ export default function OrderDetailPage() {
 
   const [actionBusy, setActionBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [approveNote, setApproveNote] = useState("");
+
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   // 1. Authenticate user and verify staff role
   useEffect(() => {
@@ -160,6 +168,7 @@ export default function OrderDetailPage() {
     if (!params?.orderId) return;
     setActionBusy(true);
     setActionMessage(null);
+    setActionError(null);
     try {
       await apiRequest(`/orders/desk/${params.orderId}/start-review`, {
         method: "POST",
@@ -167,8 +176,68 @@ export default function OrderDetailPage() {
       setActionMessage("Order status updated to UNDER REVIEW.");
       await loadOrder();
     } catch (err) {
-      setActionMessage(
+      setActionError(
         err instanceof Error ? err.message : "Failed to start review."
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // 4. Action: Approve Order
+  const handleApproveOrder = async () => {
+    if (!params?.orderId) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const res = await apiRequest<{ message: string; warehouse_name?: string }>(
+        `/orders/desk/${params.orderId}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            desk_note: approveNote.trim() || null,
+          }),
+        }
+      );
+      setActionMessage(res.message || "Order approved successfully. Stock reserved.");
+      setShowApproveModal(false);
+      setApproveNote("");
+      await loadOrder();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Approval failed."
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  // 5. Action: Reject Order
+  const handleRejectOrder = async () => {
+    if (!params?.orderId) return;
+    if (rejectReason.trim().length < 3) {
+      setActionError("Please provide a rejection reason (minimum 3 characters).");
+      return;
+    }
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const res = await apiRequest<{ message: string }>(
+        `/orders/desk/${params.orderId}/reject`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason: rejectReason.trim(),
+          }),
+        }
+      );
+      setActionMessage(res.message || "Order has been rejected.");
+      setShowRejectModal(false);
+      setRejectReason("");
+      await loadOrder();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Rejection failed."
       );
     } finally {
       setActionBusy(false);
@@ -328,23 +397,54 @@ export default function OrderDetailPage() {
               {order.status.replace("_", " ")}
             </span>
 
-            {order.status === "SUBMITTED" && (
-              <button
-                type="button"
-                onClick={handleStartReview}
-                disabled={actionBusy}
-                className="border border-gray-900 bg-gray-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-              >
-                {actionBusy ? "Updating..." : "Start Review"}
-              </button>
+            {(order.status === "SUBMITTED" || order.status === "UNDER_REVIEW") && (
+              <div className="flex items-center gap-2">
+                {order.status === "SUBMITTED" && (
+                  <button
+                    type="button"
+                    onClick={handleStartReview}
+                    disabled={actionBusy}
+                    className="border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Start Review
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError(null);
+                    setShowRejectModal(true);
+                  }}
+                  disabled={actionBusy}
+                  className="border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Reject Order
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError(null);
+                    setShowApproveModal(true);
+                  }}
+                  disabled={actionBusy}
+                  className="border border-emerald-700 bg-emerald-700 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  Approve Order
+                </button>
+              </div>
             )}
           </div>
         </div>
       </header>
 
       {actionMessage && (
-        <div className="border-b border-blue-200 bg-blue-50 px-6 py-3 text-center text-xs font-medium text-blue-900">
+        <div className="border-b border-emerald-200 bg-emerald-50 px-6 py-3 text-center text-xs font-medium text-emerald-900">
           {actionMessage}
+        </div>
+      )}
+      {actionError && (
+        <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-center text-xs font-medium text-red-900">
+          {actionError}
         </div>
       )}
 
@@ -436,6 +536,38 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Desk Note / Rejection Reason (if present) */}
+            {order.desk_note && (
+              <div
+                className={`border p-5 ${
+                  order.status === "REJECTED"
+                    ? "border-red-200 bg-red-50"
+                    : "border-gray-200 bg-gray-50"
+                }`}
+              >
+                <h3
+                  className={`text-xs font-semibold uppercase tracking-wider ${
+                    order.status === "REJECTED"
+                      ? "text-red-800"
+                      : "text-gray-700"
+                  }`}
+                >
+                  {order.status === "REJECTED"
+                    ? "Order Rejection Reason"
+                    : "Order Desk Note"}
+                </h3>
+                <p
+                  className={`mt-2 text-sm ${
+                    order.status === "REJECTED"
+                      ? "text-red-900 font-medium"
+                      : "text-gray-800"
+                  }`}
+                >
+                  {order.desk_note}
+                </p>
+              </div>
+            )}
 
             {/* Customer Note (if present) */}
             {order.customer_note && (
@@ -621,6 +753,160 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
+      {/* Modal: Confirm Order Approval */}
+      {showApproveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
+          <div className="w-full max-w-lg border border-gray-300 bg-white p-6 shadow-md">
+            <h3 className="text-lg font-semibold text-gray-950">
+              Confirm Order Approval
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Order {order.order_number} for {retailer?.shop_name || "Retailer"}.
+            </p>
+
+            <div className="mt-4 border-t border-b border-gray-100 py-3 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Order Grand Total:</span>
+                <span className="font-mono font-medium text-gray-950">
+                  {formatCurrency(order.total_amount)}
+                </span>
+              </div>
+              {credit && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Kirana Available Credit:</span>
+                  <span className="font-mono font-medium text-gray-950">
+                    {formatCurrency(credit.available_credit)}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Line Items to Reserve:</span>
+                <span className="font-medium text-gray-950">
+                  {items.length} SKUs ({items.reduce((acc, i) => acc + i.quantity + i.free_quantity, 0)} units)
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-700">
+                Staff Note (Optional)
+              </label>
+              <input
+                type="text"
+                value={approveNote}
+                onChange={(e) => setApproveNote(e.target.value)}
+                placeholder="e.g. Verified stock for dispatch"
+                className="mt-1 w-full border border-gray-300 px-3 py-2 text-xs text-gray-900 outline-none focus:border-gray-900"
+              />
+            </div>
+
+            <div className="mt-3 bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+              Approving will immediately commit inventory reservations and debit the retailer&apos;s credit balance.
+            </div>
+
+            {actionError && (
+              <p className="mt-3 text-xs font-medium text-red-600">
+                {actionError}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowApproveModal(false);
+                  setActionError(null);
+                }}
+                disabled={actionBusy}
+                className="border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApproveOrder}
+                disabled={actionBusy}
+                className="bg-emerald-700 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {actionBusy ? "Approving..." : "Confirm & Approve"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Order Rejection */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
+          <div className="w-full max-w-lg border border-red-200 bg-white p-6 shadow-md">
+            <h3 className="text-lg font-semibold text-gray-950">
+              Reject Order
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Order {order.order_number} will be marked as REJECTED.
+            </p>
+
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-700">
+                Reason for Rejection (Mandatory)
+              </label>
+              <textarea
+                rows={3}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="State the reason (e.g. Insufficient stock, retailer account suspended, price mismatch)"
+                className="mt-1 w-full border border-gray-300 p-2.5 text-xs text-gray-900 outline-none focus:border-gray-900"
+              />
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[
+                "Insufficient warehouse stock",
+                "Retailer credit limit exceeded",
+                "Shop account unverified",
+                "Discontinued SKU ordered",
+              ].map((quickReason) => (
+                <button
+                  key={quickReason}
+                  type="button"
+                  onClick={() => setRejectReason(quickReason)}
+                  className="border border-gray-200 bg-gray-50 px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-100"
+                >
+                  {quickReason}
+                </button>
+              ))}
+            </div>
+
+            {actionError && (
+              <p className="mt-3 text-xs font-medium text-red-600">
+                {actionError}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setActionError(null);
+                }}
+                disabled={actionBusy}
+                className="border border-gray-300 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectOrder}
+                disabled={actionBusy || rejectReason.trim().length < 3}
+                className="bg-red-700 px-4 py-2 text-xs font-medium text-white hover:bg-red-800 disabled:opacity-40"
+              >
+                {actionBusy ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -20,3 +20,15 @@ class OrderCreate(BaseModel):
     idempotency_key: str = Field(min_length=16, max_length=100)
 
     model_config = ConfigDict(extra="forbid")
+
+class OrderApproveRequest(BaseModel):
+    warehouse_id: UUID | None = None
+    desk_note: str | None = Field(default=None, max_length=500)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OrderRejectRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+    model_config = ConfigDict(extra="forbid")

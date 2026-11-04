@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,13 +9,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_roles
 from app.modules.users.models import User
 from app.modules.retailers.models import Retailer, RetailerUser
-from app.modules.credit.models import CreditAccount
+from app.modules.credit.models import CreditAccount, CreditTransaction
+from app.modules.inventory.models import (
+    Warehouse,
+    Inventory,
+    InventoryTransaction,
+)
 from app.modules.orders.models import (
     Order,
     OrderItem,
     OrderStatusHistory,
 )
-from app.modules.orders.schemas import OrderCreate
+from app.modules.orders.schemas import (
+    OrderCreate,
+    OrderApproveRequest,
+    OrderRejectRequest,
+)
 from app.modules.orders.service import create_order_draft
 
 
@@ -492,6 +502,282 @@ def start_order_review(
             "status": order.status,
             "message": "Order is now under review.",
         }
+    except Exception:
+        db.rollback()
+        raise
+
+@router.post("/desk/{order_id}/approve")
+def approve_order(
+    order_id: UUID,
+    request: OrderApproveRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("ORDER_DESK", "DISTRIBUTOR_ADMIN")
+    ),
+):
+    desk_note = request.desk_note if request else None
+    req_warehouse_id = request.warehouse_id if request else None
+
+    try:
+        # 1. Lock the order row to prevent race conditions
+        order = db.scalar(
+            select(Order)
+            .where(Order.id == order_id)
+            .with_for_update()
+        )
+        if order is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found.",
+            )
+
+        if order.status == "APPROVED":
+            return {
+                "id": order.id,
+                "order_number": order.order_number,
+                "status": order.status,
+                "approved_at": order.approved_at,
+                "message": "Order is already approved.",
+            }
+
+        if order.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot approve order with status '{order.status}'. "
+                    "Only SUBMITTED or UNDER_REVIEW orders can be approved."
+                ),
+            )
+
+        # 2. Check and validate retailer status
+        retailer = db.get(Retailer, order.retailer_id)
+        if (
+            retailer is None
+            or not retailer.is_active
+            or retailer.registration_status in {"REJECTED", "SUSPENDED"}
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Retailer account is inactive or suspended.",
+            )
+
+        # 3. Revalidate retailer credit account
+        credit = db.scalar(
+            select(CreditAccount)
+            .where(CreditAccount.retailer_id == order.retailer_id)
+            .with_for_update()
+        )
+
+        if credit:
+            available_credit = credit.credit_limit - credit.current_outstanding
+            if order.total_amount > available_credit:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Order total (Rs {order.total_amount:.2f}) exceeds available credit "
+                        f"(Rs {available_credit:.2f})."
+                    ),
+                )
+
+            # Deduct credit by incrementing current_outstanding
+            credit.current_outstanding += order.total_amount
+            db.add(
+                CreditTransaction(
+                    credit_account_id=credit.id,
+                    transaction_type="ORDER_DEBIT",
+                    amount=order.total_amount,
+                    reference_type="ORDER",
+                    reference_id=order.id,
+                    note=f"Credit debit for approved order {order.order_number}",
+                    created_by=current_user.id,
+                )
+            )
+
+        # 4. Determine Warehouse for stock reservation
+        if req_warehouse_id:
+            warehouse = db.scalar(
+                select(Warehouse).where(
+                    Warehouse.id == req_warehouse_id,
+                    Warehouse.is_active.is_(True),
+                )
+            )
+            if warehouse is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Specified warehouse is not found or inactive.",
+                )
+        else:
+            warehouse = db.scalar(
+                select(Warehouse)
+                .where(Warehouse.is_active.is_(True))
+                .order_by(Warehouse.created_at.asc())
+            )
+            if warehouse is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No active warehouse found for inventory allocation.",
+                )
+
+        # 5. Fetch order items and reserve stock
+        order_items = db.scalars(
+            select(OrderItem)
+            .where(OrderItem.order_id == order.id)
+            .order_by(OrderItem.created_at.asc())
+        ).all()
+
+        if not order_items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Order contains no line items.",
+            )
+
+        for item in order_items:
+            total_qty_needed = Decimal(str(item.quantity)) + Decimal(str(item.free_quantity))
+
+            inventory = db.scalar(
+                select(Inventory)
+                .where(
+                    Inventory.warehouse_id == warehouse.id,
+                    Inventory.product_id == item.product_id,
+                )
+                .with_for_update()
+            )
+
+            available_stock = (
+                (inventory.quantity_on_hand - inventory.quantity_reserved)
+                if inventory
+                else Decimal(0)
+            )
+
+            if inventory is None or available_stock < total_qty_needed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Insufficient stock for '{item.product_name}' (SKU: {item.sku}). "
+                        f"Required: {total_qty_needed}, Available: {available_stock} in '{warehouse.name}'."
+                    ),
+                )
+
+            # Atomically reserve stock
+            inventory.quantity_reserved += total_qty_needed
+            db.add(
+                InventoryTransaction(
+                    warehouse_id=warehouse.id,
+                    product_id=item.product_id,
+                    movement_type="ORDER_RESERVE",
+                    quantity_delta=total_qty_needed,
+                    reference_type="ORDER",
+                    reference_id=order.id,
+                    note=(
+                        f"Stock reserved for {order.order_number} "
+                        f"({item.quantity} ordered + {item.free_quantity} scheme free)"
+                    ),
+                    created_by=current_user.id,
+                )
+            )
+
+        # 6. Update Order Status
+        previous_status = order.status
+        order.status = "APPROVED"
+        order.approved_at = datetime.now(timezone.utc)
+        if desk_note:
+            order.desk_note = desk_note
+
+        db.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                previous_status=previous_status,
+                new_status="APPROVED",
+                changed_by=current_user.id,
+                note=(
+                    f"Order approved by Order Desk. "
+                    f"Stock reserved in warehouse '{warehouse.name}'."
+                    + (f" Note: {desk_note}" if desk_note else "")
+                ),
+            )
+        )
+
+        db.commit()
+        db.refresh(order)
+
+        return {
+            "id": order.id,
+            "order_number": order.order_number,
+            "status": order.status,
+            "approved_at": order.approved_at,
+            "total_amount": float(order.total_amount),
+            "warehouse_name": warehouse.name,
+            "message": "Order approved successfully. Stock reserved.",
+        }
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/desk/{order_id}/reject")
+def reject_order(
+    order_id: UUID,
+    request: OrderRejectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("ORDER_DESK", "DISTRIBUTOR_ADMIN")
+    ),
+):
+    try:
+        order = db.scalar(
+            select(Order)
+            .where(Order.id == order_id)
+            .with_for_update()
+        )
+        if order is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found.",
+            )
+
+        if order.status == "REJECTED":
+            return {
+                "id": order.id,
+                "order_number": order.order_number,
+                "status": order.status,
+                "message": "Order is already rejected.",
+            }
+
+        if order.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot reject order with status '{order.status}'. "
+                    "Only SUBMITTED or UNDER_REVIEW orders can be rejected."
+                ),
+            )
+
+        previous_status = order.status
+        order.status = "REJECTED"
+        order.desk_note = request.reason
+
+        db.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                previous_status=previous_status,
+                new_status="REJECTED",
+                changed_by=current_user.id,
+                note=f"Order rejected by Order Desk. Reason: {request.reason}",
+            )
+        )
+
+        db.commit()
+        db.refresh(order)
+
+        return {
+            "id": order.id,
+            "order_number": order.order_number,
+            "status": order.status,
+            "rejection_reason": request.reason,
+            "message": "Order has been rejected.",
+        }
+
     except Exception:
         db.rollback()
         raise
