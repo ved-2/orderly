@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import retailer_registration, auth
 from app.modules.orders.router import router as orders_router
+from app.modules.orders.salesman_router import router as salesman_router
 from app.modules.products.router import router as products_router
 from app.modules.products.admin_router import router as distributor_products_router
 from app.modules.schemes.admin_router import router as distributor_schemes_router
@@ -17,6 +18,7 @@ api_router.include_router(distributor_staff_router)
 api_router.include_router(distributor_products_router)
 api_router.include_router(distributor_schemes_router)
 api_router.include_router(credit_router)
+api_router.include_router(salesman_router)
 api_router.include_router(products_router)
 api_router.include_router(orders_router)
 api_router.include_router(auth.router)

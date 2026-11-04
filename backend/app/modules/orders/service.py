@@ -20,6 +20,7 @@ def create_order_draft(
     db: Session,
     payload: OrderCreate,
     created_by: UUID,
+    source: str = "RETAILER_WEB",
 ) -> Order:
     """
     Create a priced order draft.
@@ -66,7 +67,7 @@ def create_order_draft(
             retailer_id=payload.retailer_id,
             created_by=created_by,
             status="DRAFT",
-            source="RETAILER_WEB",
+            source=source,
             idempotency_key=payload.idempotency_key,
             customer_note=payload.customer_note,
         )

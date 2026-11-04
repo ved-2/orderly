@@ -158,12 +158,8 @@ export default function DistributorCataloguePage() {
   const [newMinQty, setNewMinQty] = useState("20");
   const [newDiscountType, setNewDiscountType] = useState<"PERCENTAGE" | "FIXED_AMOUNT">("PERCENTAGE");
   const [newDiscountValue, setNewDiscountValue] = useState("5");
-  const [newValidFrom, setNewValidFrom] = useState(
-    new Date().toISOString().split("T")[0]
-  );
-  const [newValidTo, setNewValidTo] = useState(
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-  );
+  const [newValidFrom, setNewValidFrom] = useState("");
+  const [newValidTo, setNewValidTo] = useState("");
   const [savingScheme, setSavingScheme] = useState(false);
 
   // 1. Authenticate user
@@ -499,6 +495,13 @@ export default function DistributorCataloguePage() {
                 if (products.length > 0 && !newSchemeProductId) {
                   setNewSchemeProductId(products[0].id);
                 }
+                const today = new Date();
+                setNewValidFrom(today.toISOString().split("T")[0]);
+                setNewValidTo(
+                  new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+                    .toISOString()
+                    .split("T")[0]
+                );
                 setShowAddSchemeModal(true);
               }}
               className="border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50"
