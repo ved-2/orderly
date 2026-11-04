@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -84,7 +84,7 @@ interface UserProfile {
 
 const ALLOWED_ROLES = new Set(["ORDER_DESK", "DISTRIBUTOR_ADMIN"]);
 
-export default function OrderDetailPage() {
+function OrderDetailContent() {
   const params = useParams<{ orderId: string }>();
   const router = useRouter();
   const { user, loading: authLoading, logout } = useAuth();
@@ -908,5 +908,23 @@ export default function OrderDetailPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function OrderDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gray-50 p-8">
+          <div className="mx-auto max-w-7xl">
+            <p className="text-sm text-gray-500">
+              Loading order review details...
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <OrderDetailContent />
+    </Suspense>
   );
 }
