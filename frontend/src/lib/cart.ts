@@ -71,10 +71,15 @@ export function addToCart(item: CartItem): void {
     throw new Error("Invalid cart quantity.");
   }
 
-  const requiredPieces =
-    target.quantity_unit === "CASE"
-      ? target.quantity * target.units_per_case
-      : target.quantity;
+  const requiredPieces = updated
+    .filter((entry) => entry.product_id === item.product_id)
+    .reduce(
+      (total, entry) =>
+        total +
+        entry.quantity *
+          (entry.quantity_unit === "CASE" ? entry.units_per_case : 1),
+      0,
+    );
 
   if (requiredPieces > target.quantity_available) {
     throw new Error("Requested quantity exceeds available stock.");
@@ -94,23 +99,25 @@ export function updateCartQuantity(
 
   const cart = getCart();
 
-  const updated = cart.map((item) => {
-    if (
-      item.product_id !== productId ||
-      item.quantity_unit !== quantityUnit
-    ) {
-      return item;
-    }
+  const updated = cart.map((item) =>
+    item.product_id === productId && item.quantity_unit === quantityUnit
+      ? { ...item, quantity }
+      : item,
+  );
+  const target = updated.find((item) => item.product_id === productId);
+  const requiredPieces = updated
+    .filter((item) => item.product_id === productId)
+    .reduce(
+      (total, item) =>
+        total +
+        item.quantity *
+          (item.quantity_unit === "CASE" ? item.units_per_case : 1),
+      0,
+    );
 
-    const requiredPieces =
-      quantityUnit === "CASE" ? quantity * item.units_per_case : quantity;
-
-    if (requiredPieces > item.quantity_available) {
-      throw new Error("Requested quantity exceeds available stock.");
-    }
-
-    return { ...item, quantity };
-  });
+  if (target && requiredPieces > target.quantity_available) {
+    throw new Error("Requested quantity exceeds available stock.");
+  }
 
   saveCart(updated);
 }

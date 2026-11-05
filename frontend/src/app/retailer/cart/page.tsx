@@ -206,16 +206,17 @@ export default function RetailerCartPage() {
                 return (
                   <article
                     key={`${item.product_id}-${item.quantity_unit}`}
-                    className="p-4 sm:p-5 transition-colors hover:bg-[#FBFBFA]"
+                    className="p-4 sm:p-6 transition-colors hover:bg-[#FBFBFA]"
                   >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       {/* Product Thumbnail + Information */}
-                      <div className="flex items-start gap-3.5 min-w-0">
+                      <div className="flex min-w-0 items-center gap-4">
                         <ProductThumbnail
                           name={item.name}
                           brandName={item.brand_name}
                           imageUrl={item.image_url}
-                          size="md"
+                          size="lg"
+                          className="h-24 w-24 shrink-0 sm:h-28 sm:w-28"
                         />
 
                         <div className="min-w-0 flex-1">
@@ -223,12 +224,9 @@ export default function RetailerCartPage() {
                             <Badge variant="outline" className="text-[10px]">
                               {item.brand_name}
                             </Badge>
-                            <span className="font-mono text-[10px] text-[#969892]">
-                              {item.sku}
-                            </span>
                           </div>
 
-                          <h2 className="mt-1 font-bold text-sm text-[#242724] truncate">
+                          <h2 className="mt-1 font-bold text-sm text-[#242724] sm:text-base">
                             {item.name}
                           </h2>
 
@@ -259,17 +257,18 @@ export default function RetailerCartPage() {
                       </div>
 
                       {/* Quantity Stepper & Line Total */}
-                      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-4 border-t border-[#F0EFEA] pt-3 sm:border-0 sm:pt-0">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#F0EFEA] pt-3 sm:justify-end sm:border-0 sm:pt-0">
                         {/* Stepper */}
-                        <div className="flex items-center">
+                        <div className="flex items-center" aria-label={`Quantity in ${item.quantity_unit.toLowerCase()}s`}>
                           <button
                             type="button"
                             onClick={() =>
                               handleQuantityChange(item, item.quantity - 1)
                             }
                             disabled={item.quantity <= 1}
-                            className="flex h-8 w-8 items-center justify-center rounded-l-[4px] border border-[#E7E6E0] bg-[#F6F5F1] text-[#242724] hover:bg-[#EAE8E1] disabled:opacity-40 transition-colors"
+                            className="flex h-10 w-10 items-center justify-center rounded-l-[4px] border border-[#E7E6E0] bg-[#F6F5F1] text-[#242724] transition-colors hover:bg-[#EAE8E1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D] disabled:opacity-40"
                             title="Decrease quantity"
+                            aria-label="Decrease quantity"
                           >
                             <Minus size={13} />
                           </button>
@@ -281,15 +280,17 @@ export default function RetailerCartPage() {
                             onChange={(e) =>
                               handleQuantityChange(item, Number(e.target.value))
                             }
-                            className="h-8 w-14 border-y border-[#E7E6E0] bg-white text-center font-mono text-xs font-bold text-[#242724] focus:outline-none focus:ring-1 focus:ring-[#79565D]"
+                            aria-label={`Quantity of ${item.name}`}
+                            className="h-10 w-14 border-y border-[#E7E6E0] bg-white text-center font-mono text-sm font-bold text-[#242724] focus:outline-none focus:ring-1 focus:ring-[#79565D]"
                           />
                           <button
                             type="button"
                             onClick={() =>
                               handleQuantityChange(item, item.quantity + 1)
                             }
-                            className="flex h-8 w-8 items-center justify-center rounded-r-[4px] border border-[#E7E6E0] bg-[#F6F5F1] text-[#242724] hover:bg-[#EAE8E1] transition-colors"
+                            className="flex h-10 w-10 items-center justify-center rounded-r-[4px] border border-[#E7E6E0] bg-[#F6F5F1] text-[#242724] transition-colors hover:bg-[#EAE8E1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]"
                             title="Increase quantity"
+                            aria-label="Increase quantity"
                           >
                             <Plus size={13} />
                           </button>
@@ -299,7 +300,7 @@ export default function RetailerCartPage() {
                         </div>
 
                         {/* Line Total */}
-                        <div className="text-right min-w-[90px]">
+                        <div className="min-w-[90px] text-right">
                           <p className="text-[10px] uppercase font-bold tracking-wider text-[#969892]">
                             Line Total
                           </p>
@@ -312,19 +313,27 @@ export default function RetailerCartPage() {
                         <button
                           type="button"
                           onClick={() => handleRemove(item)}
-                          className="flex h-8 w-8 items-center justify-center rounded-[4px] text-[#969892] hover:bg-[#FBF0F0] hover:text-[#8C2828] transition-colors"
+                          className="flex h-10 w-10 items-center justify-center rounded-[4px] text-[#969892] transition-colors hover:bg-[#FBF0F0] hover:text-[#8C2828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]"
                           title="Remove item"
+                          aria-label={`Remove ${item.name}`}
                         >
                           <Trash2 size={15} />
                         </button>
                       </div>
                     </div>
 
-                    {isCase && (
-                      <p className="mt-2.5 text-[11px] text-[#969892]">
-                        Total: <span className="font-semibold text-[#666864] tabular-nums">{item.quantity * item.units_per_case} individual packs</span> will be reserved from depot stock.
-                      </p>
-                    )}
+                    <p className="mt-3 text-[11px] text-[#969892]">
+                      Requested from depot:{" "}
+                      <span className="font-semibold text-[#666864] tabular-nums">
+                        {item.quantity * multiplier} {item.quantity * multiplier === 1 ? "pack" : "packs"}
+                      </span>
+                      {isCase && (
+                        <span className="text-[#969892]">
+                          {" "}({item.quantity} {item.quantity === 1 ? "case" : "cases"})
+                        </span>
+                      )}
+                      <span className="text-[#969892]"> · availability confirmed by depot after checkout</span>
+                    </p>
                   </article>
                 );
               })}
@@ -332,8 +341,8 @@ export default function RetailerCartPage() {
           </div>
 
           {/* Aside Order Summary */}
-          <aside className="space-y-4">
-            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs">
+          <aside className="h-fit space-y-4 lg:sticky lg:top-20">
+            <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs sm:p-6">
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#969892]">
                 Order Summary
               </h2>
@@ -347,7 +356,7 @@ export default function RetailerCartPage() {
                 </div>
 
                 <div className="flex justify-between text-[#666864]">
-                  <span>Total Units / Packs</span>
+                  <span>Packs requested</span>
                   <span className="font-mono font-semibold text-[#242724] tabular-nums">
                     {totalUnits}
                   </span>
@@ -378,7 +387,7 @@ export default function RetailerCartPage() {
                   <ShieldCheck size={14} className="text-[#79565D]" />
                   <span>Depot Verification</span>
                 </div>
-                GST, active trade schemes (e.g. 10+1 free), and Kirana credit eligibility will be applied when reviewed by the Order Desk.
+                Pack quantities are requests, not confirmed stock reservations. The depot verifies stock availability, GST, eligible trade schemes and credit eligibility after checkout.
               </div>
 
               {/* Checkout Button */}
@@ -386,7 +395,7 @@ export default function RetailerCartPage() {
                 href="/retailer/checkout"
                 className="mt-5 flex w-full items-center justify-center gap-2 rounded-[4px] bg-[#79565D] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-2xs hover:bg-[#67474E] transition-colors"
               >
-                <span>Proceed to Checkout</span>
+                <span>Continue to Checkout</span>
                 <ArrowRight size={14} />
               </Link>
             </div>

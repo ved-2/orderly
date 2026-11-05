@@ -367,7 +367,7 @@ export default function RetailerSettingsPage() {
         <div className="flex items-center justify-between border-b border-[#E7E6E0] pb-3">
           <div className="flex items-center gap-2">
             <Store size={16} className="text-[#79565D]" />
-            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+            <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
               {str.shopProfile}
             </h2>
           </div>
@@ -387,7 +387,7 @@ export default function RetailerSettingsPage() {
           <form onSubmit={handleProfileSave} className="space-y-4 pt-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#969892] block mb-1">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-[#969892] block mb-1">
                   Shop Name *
                 </label>
                 <input
@@ -400,7 +400,7 @@ export default function RetailerSettingsPage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#969892] block mb-1">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-[#969892] block mb-1">
                   Owner Name *
                 </label>
                 <input
@@ -413,7 +413,7 @@ export default function RetailerSettingsPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#969892] block mb-1">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-[#969892] block mb-1">
                   Shop Address *
                 </label>
                 <input
@@ -426,7 +426,7 @@ export default function RetailerSettingsPage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#969892] block mb-1">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-[#969892] block mb-1">
                   City
                 </label>
                 <input
@@ -438,7 +438,7 @@ export default function RetailerSettingsPage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#969892] block mb-1">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-[#969892] block mb-1">
                   Pincode *
                 </label>
                 <input
@@ -452,7 +452,7 @@ export default function RetailerSettingsPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#969892] block mb-1">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-[#969892] block mb-1">
                   GSTIN (Optional)
                 </label>
                 <input
@@ -537,22 +537,22 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <UserIcon size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.personalInfo}
           </h2>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#969892]">Owner / Primary Contact</span>
+            <span className="text-[11px] font-medium uppercase tracking-wider text-[#969892]">Owner / Primary Contact</span>
             <p className="mt-0.5 font-semibold text-[#242724]">{profile.owner_name}</p>
           </div>
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#969892]">Mobile Phone</span>
+            <span className="text-[11px] font-medium uppercase tracking-wider text-[#969892]">Mobile Phone</span>
             <p className="mt-0.5 font-mono font-semibold text-[#242724]">{profile.phone}</p>
           </div>
           <div className="sm:col-span-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#969892]">Registered Email</span>
+            <span className="text-[11px] font-medium uppercase tracking-wider text-[#969892]">Registered Email</span>
             <p className="mt-0.5 font-semibold text-[#242724]">{profile.email || "—"}</p>
           </div>
         </div>
@@ -562,7 +562,7 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <UserCheck size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.assignedSalesman}
           </h2>
         </div>
@@ -608,7 +608,7 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <Languages size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.languagePref}
           </h2>
         </div>
@@ -658,7 +658,7 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <Bell size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.notifPref}
           </h2>
         </div>
@@ -700,7 +700,7 @@ export default function RetailerSettingsPage() {
                 className="flex items-center justify-between gap-4 py-3.5 first:pt-1 last:pb-1"
               >
                 <div>
-                  <p className="text-xs font-bold text-[#242724]">{item.title}</p>
+                  <p className="text-xs font-semibold text-[#242724]">{item.title}</p>
                   <p className="text-[11px] text-[#666864] mt-0.5 leading-relaxed">
                     {item.desc}
                   </p>
@@ -733,7 +733,7 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <Shield size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.privacySecurity}
           </h2>
         </div>
@@ -777,7 +777,7 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-4">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <HelpCircle size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.helpSupport}
           </h2>
         </div>
@@ -848,7 +848,7 @@ export default function RetailerSettingsPage() {
       <section className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-3">
           <Info size={16} className="text-[#79565D]" />
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#242724]">
+          <h2 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#242724]">
             {str.about}
           </h2>
         </div>

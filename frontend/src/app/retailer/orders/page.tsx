@@ -507,7 +507,7 @@ export default function RetailerOrdersPage() {
                     className="w-10 h-10 shrink-0"
                   />
                   <div className="min-w-0">
-                    <p className="font-bold text-[#242724] truncate">
+                    <p className="font-semibold text-[#242724] truncate">
                       {line.product_name}
                     </p>
                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#666864]">
@@ -869,14 +869,21 @@ export default function RetailerOrdersPage() {
 
       {/* ── Mobile Order Details Modal Sheet ───────────────────── */}
       {mobileDetailOpen && selectedOrder && (
-        <div className="fixed inset-0 z-50 flex bg-black/50 backdrop-blur-xs lg:hidden overflow-y-auto p-3">
-          <div className="my-auto w-full max-w-lg rounded-[8px] bg-white p-4 sm:p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-xs lg:hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Order details for ${selectedOrder.order_number}`}
+            className="w-full max-w-2xl rounded-[8px] bg-white p-4 shadow-xl sm:p-5 max-h-[calc(100dvh-2rem)] overflow-y-auto"
+          >
             <div className="flex items-center justify-between border-b border-[#E7E6E0] pb-3 mb-4">
               <span className="text-xs font-bold uppercase tracking-wider text-[#242724]">
                 Order Details
               </span>
               <button
+                type="button"
                 onClick={() => setMobileDetailOpen(false)}
+                aria-label="Close order details"
                 className="p-1.5 rounded-[4px] text-[#666864] hover:bg-[#F0EFEA] min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
                 <X size={18} />
@@ -887,6 +894,7 @@ export default function RetailerOrdersPage() {
 
             <div className="mt-5 pt-3 border-t border-[#E7E6E0]">
               <button
+                type="button"
                 onClick={() => setMobileDetailOpen(false)}
                 className="w-full rounded-[4px] bg-[#242724] py-2.5 text-xs font-bold uppercase tracking-wider text-white min-h-[44px]"
               >

@@ -1,40 +1,33 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Search,
-  Truck,
-  Wallet,
-  ArrowRight,
-  Mic,
-  MessageSquareText,
-  Camera,
-  Coffee,
   Apple,
-  Droplets,
-  Sparkles,
-  Cookie,
-  Wheat,
-  ShoppingBag,
-  Plus,
-  Package,
-  ChevronRight,
-  ChevronLeft,
+  ArrowRight,
+  ArrowUpRight,
   Check,
-  Clock,
+  ChevronRight,
+  Clock3,
+  Coffee,
+  Cookie,
+  Droplets,
+  Package,
+  Plus,
+  Search,
+  ShoppingBag,
+  Sparkles,
+  Tag,
+  Wallet,
+  Wheat,
+  type LucideIcon,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
 import { addToCart } from "@/lib/cart";
-import { Badge } from "@/components/ui/badge";
 import { ProductThumbnail } from "@/components/ui/product-thumbnail";
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
 
 interface UserProfile {
   id: string;
@@ -51,12 +44,12 @@ interface RetailerOrder {
   status: string;
   total_amount: number;
   created_at: string;
-  lines: Array<{
+  lines?: Array<{
     product_id: string;
     product_name: string;
     sku: string;
     quantity: number;
-    quantity_unit: string;
+    quantity_unit: "CASE" | "PIECE";
     unit_price: number;
   }>;
 }
@@ -66,26 +59,29 @@ interface OrdersResponse {
   total: number;
 }
 
-interface CreditRetailer {
-  id: string;
-  shop_name: string;
-  owner_name: string;
-  retailer_code: string;
-  phone: string;
-}
-
 interface CreditSummary {
   credit_limit: number;
   current_outstanding: number;
   available_credit: number;
   utilization_percentage: number;
-  payment_terms_days: number;
-  account_status: string;
-  retailer: CreditRetailer;
+  retailer: {
+    shop_name: string;
+    owner_name: string;
+  };
 }
 
 interface LedgerResponse {
   summary: CreditSummary;
+}
+
+interface ProductScheme {
+  scheme_name: string;
+  scheme_type: "BUY_X_GET_Y" | "SLAB_DISCOUNT";
+  buy_quantity?: number | null;
+  reward_quantity?: number | null;
+  min_quantity?: number | null;
+  discount_type?: "PERCENTAGE" | "FIXED_AMOUNT" | null;
+  discount_value?: number | null;
 }
 
 interface CatalogueProduct {
@@ -99,36 +95,19 @@ interface CatalogueProduct {
   pack_size: number;
   pack_unit: string;
   units_per_case: number;
-  hsn_code: string | null;
-  gst_rate: number | null;
   price: number | null;
+  image_url?: string | null;
   gst_included: boolean | null;
-  quantity_on_hand: number;
-  quantity_reserved: number;
   quantity_available: number;
   is_in_stock: boolean;
+  schemes?: ProductScheme[];
 }
 
 interface CatalogueResponse {
   items: CatalogueProduct[];
-  total: number;
-  page: number;
-  page_size: number;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Beverages: Coffee,
   "Dairy & Beverages": Coffee,
   Snacks: Cookie,
@@ -141,81 +120,196 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   Confectionery: Cookie,
 };
 
-function getCategoryIcon(category: string): React.ElementType {
-  return CATEGORY_ICONS[category] || Package;
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
-const QUICK_SEARCH_CHIPS = ["Tea & Coffee", "Salt", "Spices", "Biscuits", "Atta"];
+function formatScheme(scheme: ProductScheme): string {
+  if (scheme.scheme_type === "BUY_X_GET_Y" && scheme.buy_quantity && scheme.reward_quantity) {
+    return `Buy ${scheme.buy_quantity} Get ${scheme.reward_quantity} Free`;
+  }
+  if (scheme.scheme_type === "SLAB_DISCOUNT" && scheme.min_quantity && scheme.discount_value) {
+    return scheme.discount_type === "PERCENTAGE"
+      ? `${scheme.discount_value}% off at ${scheme.min_quantity}+ cases`
+      : `₹${scheme.discount_value} off at ${scheme.min_quantity}+ cases`;
+  }
+  return scheme.scheme_name;
+}
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
+function orderStatusClass(status: string): string {
+  switch (status.toUpperCase()) {
+    case "DELIVERED":
+    case "COMPLETED":
+      return "bg-[#EEF6F1] text-[#356545]";
+    case "CANCELLED":
+    case "REJECTED":
+      return "bg-[#FBF0F0] text-[#8C2828]";
+    case "APPROVED":
+    case "DISPATCHED":
+      return "bg-[#F4EFF0] text-[#67474E]";
+    default:
+      return "bg-[#F0EFEA] text-[#666864]";
+  }
+}
+
+function ProductCard({
+  product,
+  added,
+  onAdd,
+}: {
+  product: CatalogueProduct;
+  added: boolean;
+  onAdd: () => void;
+}) {
+  const casePrice =
+    product.price !== null && product.units_per_case > 1
+      ? product.price * product.units_per_case
+      : null;
+  const isAvailable = product.is_in_stock && product.quantity_available > 0;
+
+  return (
+    <article className="flex min-w-0 flex-col overflow-hidden rounded-md border border-[#E8E5DE] bg-white">
+      <div className="flex items-start gap-3 p-3 sm:p-4">
+        <ProductThumbnail
+          name={product.name}
+          category={product.category}
+          brandName={product.brand_name}
+          imageUrl={product.image_url}
+          size="md"
+          className="h-[68px] w-[68px] shrink-0"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-medium text-[#817F79]">
+            {product.brand_name}
+          </p>
+          <h3 className="mt-0.5 line-clamp-2 text-sm font-semibold leading-5 text-[#272824]">
+            {product.name}
+          </h3>
+          <p className="mt-1 text-xs text-[#706F68]">
+            {product.pack_size} {product.pack_unit}
+            {product.units_per_case > 1 && (
+              <span> · {product.units_per_case} pieces/case</span>
+            )}
+          </p>
+          <p className={`mt-1 text-[11px] ${isAvailable ? "text-[#477553]" : "text-[#8C2828]"}`}>
+            {isAvailable ? "In stock" : "Out of stock"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-auto flex items-end justify-between gap-2 border-t border-[#F0EFEA] px-3 py-2.5 sm:px-4">
+        <div className="min-w-0">
+          {product.price !== null ? (
+            <>
+              <p className="text-sm font-bold tabular-nums text-[#272824]">
+                {formatCurrency(casePrice ?? product.price)}
+                <span className="ml-1 text-[10px] font-normal text-[#817F79]">
+                  / {casePrice !== null ? "case" : "piece"}
+                </span>
+              </p>
+              {casePrice !== null && (
+                <p className="mt-0.5 text-[10px] text-[#817F79]">
+                  {formatCurrency(product.price)} per piece
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-[#817F79]">Price unavailable</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={!isAvailable || product.price === null}
+          aria-label={`Add ${product.name} ${product.units_per_case > 1 ? "case" : "piece"} to cart`}
+          className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#F0EFEA] disabled:text-[#96958F] ${
+            added
+              ? "bg-[#EEF6F1] text-[#356545]"
+              : "bg-[#79565D] text-white hover:bg-[#67474E]"
+          }`}
+        >
+          {added ? <Check size={14} /> : <Plus size={14} />}
+          <span>{added ? "Added" : product.units_per_case > 1 ? "Add case" : "Add piece"}</span>
+        </button>
+      </div>
+    </article>
+  );
+}
 
 export default function RetailerDashboardPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
-
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
   const [orders, setOrders] = useState<RetailerOrder[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueProduct[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loadWarnings, setLoadWarnings] = useState<string[]>([]);
+  const [ordersUnavailable, setOrdersUnavailable] = useState(false);
+  const [catalogueUnavailable, setCatalogueUnavailable] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [addedProducts, setAddedProducts] = useState<Set<string>>(new Set());
-
-  const categoryScrollRef = useRef<HTMLDivElement>(null);
+  const [cartMessage, setCartMessage] = useState("");
 
   useEffect(() => {
     if (loading) return;
-
     if (!user) {
       router.replace("/register");
       return;
     }
 
     let cancelled = false;
-
     async function loadData() {
       try {
         const result = await apiRequest<UserProfile>("/auth/me");
         if (cancelled) return;
-
         if (result.role !== "RETAILER" || !result.retailer_id) {
           router.replace("/register");
           return;
         }
-
         setProfile(result);
 
-        // Parallel fetches
-        const [creditRes, ordersRes, catRes] = await Promise.allSettled([
+        const [creditRes, ordersRes, catalogueRes] = await Promise.allSettled([
           apiRequest<LedgerResponse>("/retailer/credit/ledger?limit=1"),
           apiRequest<OrdersResponse>("/orders"),
           apiRequest<CatalogueResponse>("/products/catalogue?page=1&page_size=100"),
         ]);
-
         if (cancelled) return;
 
+        const warnings: string[] = [];
         if (creditRes.status === "fulfilled" && creditRes.value.summary) {
           setCreditSummary(creditRes.value.summary);
+        } else {
+          warnings.push("Credit information could not be loaded.");
         }
         if (ordersRes.status === "fulfilled") {
-          setOrders(ordersRes.value.items);
+          setOrders(ordersRes.value.items ?? []);
+        } else {
+          setOrdersUnavailable(true);
+          warnings.push("Recent orders could not be loaded.");
         }
-        if (catRes.status === "fulfilled") {
+        if (catalogueRes.status === "fulfilled") {
           setCatalogue(
-            catRes.value.items.map((p) => ({
-              ...p,
-              is_in_stock: Number(p.quantity_available) > 0,
+            (catalogueRes.value.items ?? []).map((product) => ({
+              ...product,
+              is_in_stock: Number(product.quantity_available) > 0,
             }))
           );
+        } else {
+          setCatalogueUnavailable(true);
+          warnings.push("Catalogue products could not be loaded.");
         }
-      } catch (err) {
+        setLoadWarnings(warnings);
+      } catch (loadError) {
         if (!cancelled) {
           setError(
-            err instanceof Error
-              ? err.message
+            loadError instanceof Error
+              ? loadError.message
               : "Unable to load retailer dashboard."
           );
         }
@@ -230,176 +324,198 @@ export default function RetailerDashboardPage() {
     };
   }, [user, loading, router]);
 
-  /* Derived data */
-  const retailerName =
-    creditSummary?.retailer?.owner_name ||
-    creditSummary?.retailer?.shop_name ||
-    "";
-  const shopName = creditSummary?.retailer?.shop_name || "";
-
-  const deliveryOrders = useMemo(
-    () => orders.filter((o) => o.status === "APPROVED" || o.status === "DISPATCHED"),
+  const recentOrders = useMemo(
+    () =>
+      [...orders].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
     [orders]
   );
 
+  const upcomingOrders = useMemo(
+    () =>
+      recentOrders.filter((order) =>
+        ["SUBMITTED", "PENDING", "HOLD", "APPROVED", "PROCESSING", "DISPATCHED"].includes(
+          order.status.toUpperCase()
+        )
+      ),
+    [recentOrders]
+  );
+  const upcomingOrderStatus = upcomingOrders[0]?.status.toUpperCase();
+  const upcomingOrderMessage =
+    upcomingOrderStatus === "DISPATCHED"
+      ? "On its way to your shop"
+      : upcomingOrderStatus === "APPROVED" || upcomingOrderStatus === "PROCESSING"
+        ? "Your order is being prepared"
+        : "Order received, awaiting confirmation";
+
   const categories = useMemo(() => {
-    const cats = new Set<string>();
-    catalogue.forEach((p) => {
-      if (p.category) cats.add(p.category);
-    });
-    return Array.from(cats).sort();
+    const categoryProducts = new Map<string, CatalogueProduct>();
+    for (const product of catalogue) {
+      if (product.category && !categoryProducts.has(product.category)) {
+        categoryProducts.set(product.category, product);
+      }
+    }
+    return Array.from(categoryProducts.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [catalogue]);
 
-  // Build "Buy Again" list from past order line items, deduped by product name
   const buyAgainProducts = useMemo(() => {
-    const seen = new Map<
+    const latestPurchases = new Map<
       string,
-      {
-        product_name: string;
-        sku: string;
-        quantity_unit: string;
-        unit_price: number;
-        product_id: string;
-      }
+      { quantityUnit: "CASE" | "PIECE" }
     >();
-    for (const order of orders) {
-      if (!order.lines) continue;
-      for (const line of order.lines) {
-        if (!seen.has(line.product_name)) {
-          seen.set(line.product_name, {
-            product_name: line.product_name,
-            sku: line.sku,
-            quantity_unit: line.quantity_unit,
-            unit_price: line.unit_price,
-            product_id: line.product_id,
+    for (const order of recentOrders) {
+      for (const line of order.lines ?? []) {
+        if (!latestPurchases.has(line.product_id)) {
+          latestPurchases.set(line.product_id, {
+            quantityUnit: line.quantity_unit,
           });
         }
       }
     }
-    return Array.from(seen.values())
-      .map((item) => {
-        const catProduct = catalogue.find(
-          (p) =>
-            String(p.id) === String(item.product_id) ||
-            p.sku === item.sku ||
-            p.name.toLowerCase() === item.product_name.toLowerCase()
-        );
-        return { ...item, catProduct };
+    return Array.from(latestPurchases.entries())
+      .map(([productId, purchase]) => {
+        const product = catalogue.find((item) => item.id === productId);
+        return product ? { product, quantityUnit: purchase.quantityUnit } : null;
       })
-      .slice(0, 12);
+      .filter(
+        (item): item is { product: CatalogueProduct; quantityUnit: "CASE" | "PIECE" } =>
+          item !== null
+      )
+      .slice(0, 8);
+  }, [recentOrders, catalogue]);
+
+  const popularProducts = useMemo(() => {
+    const purchaseCounts = new Map<string, number>();
+    for (const order of orders) {
+      for (const line of order.lines ?? []) {
+        purchaseCounts.set(
+          line.product_id,
+          (purchaseCounts.get(line.product_id) ?? 0) + 1
+        );
+      }
+    }
+    return catalogue
+      .filter(
+        (product) =>
+          product.is_in_stock &&
+          product.price !== null &&
+          purchaseCounts.has(product.id)
+      )
+      .sort(
+        (a, b) =>
+          (purchaseCounts.get(b.id) ?? 0) - (purchaseCounts.get(a.id) ?? 0) ||
+          a.name.localeCompare(b.name)
+      )
+      .slice(0, 8);
   }, [orders, catalogue]);
 
-  const creditUtilization = creditSummary?.utilization_percentage || 0;
+  const activeOffers = useMemo(
+    () =>
+      catalogue.flatMap((product) =>
+        (product.schemes ?? []).map((scheme) => ({ product, scheme }))
+      ).slice(0, 8),
+    [catalogue]
+  );
+
+  const retailerName =
+    creditSummary?.retailer?.owner_name || creditSummary?.retailer?.shop_name || "";
+  const creditUtilization = Math.max(
+    0,
+    Math.min(creditSummary?.utilization_percentage ?? 0, 100)
+  );
   const creditBarColor =
     creditUtilization > 85
       ? "bg-[#8C2828]"
       : creditUtilization > 60
-      ? "bg-[#D97706]"
-      : "bg-[#205234]";
-  const creditBadgeVariant =
-    creditUtilization > 85
-      ? "danger"
-      : creditUtilization > 60
-      ? "warning"
-      : "success";
+        ? "bg-[#D97706]"
+        : "bg-[#477553]";
 
-  /* Handlers */
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchInput.trim()) {
-      router.push(`/retailer/catalogue?search=${encodeURIComponent(searchInput.trim())}`);
-    } else {
-      router.push("/retailer/catalogue");
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = searchInput.trim();
+    router.push(
+      query
+        ? `/retailer/catalogue?search=${encodeURIComponent(query)}`
+        : "/retailer/catalogue"
+    );
+  };
+
+  const handleQuickAdd = (
+    product: CatalogueProduct,
+    quantityUnit: "CASE" | "PIECE" =
+      product.units_per_case > 1 ? "CASE" : "PIECE"
+  ) => {
+    if (product.price === null) {
+      setCartMessage("This product has no retailer price yet.");
+      return;
     }
-  };
-
-  const handleChipClick = (term: string) => {
-    setSearchInput(term);
-    router.push(`/retailer/catalogue?search=${encodeURIComponent(term)}`);
-  };
-
-  const scrollCategories = (direction: "left" | "right") => {
-    if (categoryScrollRef.current) {
-      const offset = direction === "left" ? -260 : 260;
-      categoryScrollRef.current.scrollBy({ left: offset, behavior: "smooth" });
+    if (!product.is_in_stock || product.quantity_available <= 0) {
+      setCartMessage("This product is currently out of stock.");
+      return;
     }
-  };
-
-  const handleQuickAdd = (item: typeof buyAgainProducts[0]) => {
-    if (!item.catProduct || item.catProduct.price === null) return;
-    const p = item.catProduct;
-    const isAvailable = p.is_in_stock ?? (Number(p.quantity_available) > 0);
-    if (!isAvailable) return;
     try {
       addToCart({
-        product_id: String(p.id),
-        sku: p.sku,
-        name: p.name,
-        brand_name: p.brand_name,
-        pack_size: p.pack_size,
-        pack_unit: p.pack_unit,
-        units_per_case: p.units_per_case,
-        price: Number(p.price),
-        gst_included: p.gst_included ?? false,
-        quantity_available: Number(p.quantity_available),
+        product_id: product.id,
+        sku: product.sku,
+        name: product.name,
+        brand_name: product.brand_name,
+        pack_size: product.pack_size,
+        pack_unit: product.pack_unit,
+        units_per_case: product.units_per_case,
+        price: product.price,
+        gst_included: product.gst_included ?? false,
+        quantity_available: product.quantity_available,
         quantity: 1,
-        quantity_unit: "CASE",
+        quantity_unit,
+        image_url: product.image_url,
       });
-      setAddedProducts((prev) => new Set(prev).add(String(p.id)).add(item.product_id));
-      setTimeout(() => {
-        setAddedProducts((prev) => {
-          const next = new Set(prev);
-          next.delete(String(p.id));
-          next.delete(item.product_id);
+      setAddedProducts((current) => new Set(current).add(product.id));
+      setCartMessage(`${product.name} added to cart.`);
+      window.setTimeout(() => {
+        setAddedProducts((current) => {
+          const next = new Set(current);
+          next.delete(product.id);
           return next;
         });
       }, 1500);
-    } catch {
-      /* stock exceeded */
+      window.setTimeout(() => setCartMessage(""), 2500);
+    } catch (addError) {
+      setCartMessage(
+        addError instanceof Error ? addError.message : "Unable to add this product."
+      );
     }
   };
 
-  /* ---------------------------------------------------------------- */
-  /*  Loading State                                                    */
-  /* ---------------------------------------------------------------- */
-
   if (loading || pageLoading) {
     return (
-      <div className="w-full px-4 py-4 sm:px-6 sm:py-6">
-        <div className="mb-5">
+      <div className="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-7">
+        <div className="space-y-2">
           <div className="h-3 w-24 animate-pulse rounded bg-[#E7E6E0]" />
-          <div className="mt-2 h-7 w-60 animate-pulse rounded bg-[#E7E6E0]" />
-          <div className="mt-1.5 h-3.5 w-64 animate-pulse rounded bg-[#E7E6E0]" />
+          <div className="h-8 w-64 animate-pulse rounded bg-[#E7E6E0]" />
         </div>
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="h-28 animate-pulse rounded-[4px] bg-[#E7E6E0]" />
-          <div className="h-28 animate-pulse rounded-[4px] bg-[#E7E6E0]" />
-        </div>
-        <div className="h-11 animate-pulse rounded-[4px] bg-[#E7E6E0] mb-5" />
-        <div className="flex gap-2 mb-5 overflow-hidden">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-9 w-28 animate-pulse rounded-[4px] bg-[#E7E6E0] shrink-0" />
+        <div className="h-40 animate-pulse rounded-md bg-[#E7E6E0]" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((item) => (
+            <div key={item} className="h-44 animate-pulse rounded-md bg-[#E7E6E0]" />
           ))}
         </div>
       </div>
     );
   }
 
-  /* ---------------------------------------------------------------- */
-  /*  Error State                                                      */
-  /* ---------------------------------------------------------------- */
-
   if (error || !profile) {
     return (
       <div className="flex min-h-[50vh] w-full items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-6 text-center">
-          <h2 className="text-sm font-bold text-[#8C2828]">
-            Unable to open dashboard
-          </h2>
-          <p className="mt-1 text-xs text-[#8C2828]/80">{error}</p>
+        <div className="w-full max-w-md rounded-md border border-[#EDBCBC] bg-[#FBF0F0] p-6 text-center">
+          <h2 className="text-sm font-bold text-[#8C2828]">Unable to open dashboard</h2>
+          <p className="mt-1 text-xs text-[#8C2828]/80">
+            {error || "Your retailer profile could not be loaded."}
+          </p>
           <button
+            type="button"
             onClick={() => window.location.reload()}
-            className="mt-4 rounded-[4px] bg-[#8C2828] px-4 py-2 text-xs font-semibold text-white hover:bg-[#7A2020] transition-colors"
+            className="mt-4 rounded bg-[#79565D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#67474E]"
           >
             Retry
           </button>
@@ -408,420 +524,465 @@ export default function RetailerDashboardPage() {
     );
   }
 
-  /* ---------------------------------------------------------------- */
-  /*  Main Responsive Dashboard                                        */
-  /* ---------------------------------------------------------------- */
-
   return (
-    <div className="w-full px-4 py-4 sm:px-6 sm:py-6 space-y-5 sm:space-y-6">
-
-      {/* ── 1. Header: Retailer Greeting ───────────────────────── */}
-      <section className="border-b border-[#E7E6E0] pb-4">
-        <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.14em] text-[#969892]">
-          WELCOME BACK
-        </p>
-        <h1 className="mt-0.5 text-xl sm:text-2xl font-bold tracking-tight text-[#242724] leading-tight">
-          Namaste, {retailerName || "Kirana Partner"} 👋
-        </h1>
-        <p className="mt-1 text-xs sm:text-[13px] text-[#666864]">
-          Here&apos;s what&apos;s available for your shop today.
-          {shopName && (
-            <span className="font-semibold text-[#242724]">
-              {" "}— {shopName}
-            </span>
-          )}
-        </p>
-      </section>
-
-      {/* ── 2. Two Side-by-Side Cards (Available Credit & Delivery) ── */}
-      <section className="grid grid-cols-2 gap-3 sm:gap-4">
-        {/* Available Credit Card */}
-        <Link
-          href="/retailer/credit"
-          className="group rounded-[6px] border border-[#E7E6E0] bg-white p-3.5 sm:p-4 shadow-2xs hover:border-[#79565D] transition-colors"
-        >
-          <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#969892]">
-              Available Credit
-            </span>
-            <Wallet size={15} className="text-[#79565D]" />
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
-            <p className="text-lg sm:text-2xl font-bold font-mono tabular-nums text-[#242724] leading-tight">
-              {creditSummary ? formatCurrency(creditSummary.available_credit) : "₹0"}
-            </p>
-            <span className="text-[10px] sm:text-xs text-[#666864] font-mono tabular-nums">
-              Limit: {creditSummary ? formatCurrency(creditSummary.credit_limit) : "₹0"}
-            </span>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="mt-2.5 h-1.5 sm:h-2 w-full rounded-full bg-[#F0EFEA] overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${creditBarColor}`}
-              style={{ width: `${Math.min(creditUtilization, 100)}%` }}
-            />
-          </div>
-
-          <div className="mt-2 flex items-center justify-between text-[10px] sm:text-[11px]">
-            <Badge variant={creditBadgeVariant as "success" | "warning" | "danger"} className="text-[9px] sm:text-[10px] px-1.5 py-0">
-              {creditUtilization.toFixed(0)}% used
-            </Badge>
-            <span className="font-mono text-[#666864] hidden sm:inline">
-              Outstanding: {creditSummary ? formatCurrency(creditSummary.current_outstanding) : "₹0"}
-            </span>
-            <span className="text-[#969892] group-hover:text-[#79565D] flex items-center gap-0.5">
-              Passbook <ChevronRight size={11} />
-            </span>
-          </div>
-        </Link>
-
-        {/* Out for Delivery Card */}
-        <Link
-          href="/retailer/orders"
-          className="group rounded-[6px] border border-[#E7E6E0] bg-white p-3.5 sm:p-4 shadow-2xs hover:border-[#79565D] transition-colors"
-        >
-          <div className="flex items-center justify-between mb-1.5 sm:mb-2">
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#969892]">
-              Out for Delivery
-            </span>
-            <Truck size={15} className="text-[#205234]" />
-          </div>
-
-          <div className="flex items-baseline gap-2">
-            <p className="text-lg sm:text-2xl font-bold font-mono tabular-nums text-[#242724] leading-tight">
-              {deliveryOrders.length}
-            </p>
-            <span className="text-[10px] sm:text-xs text-[#666864]">
-              {deliveryOrders.length === 1 ? "order" : "orders"} arriving today
-            </span>
-          </div>
-
-          {/* Order Preview Lines */}
-          <div className="mt-2 space-y-1">
-            {deliveryOrders.length > 0 ? (
-              deliveryOrders.slice(0, 2).map((o) => (
-                <div key={o.id} className="flex items-center justify-between text-[10px] sm:text-[11px] font-mono">
-                  <span className="font-bold text-[#242724] truncate mr-2">
-                    {o.order_number}
-                  </span>
-                  <Badge variant="success" className="text-[8px] sm:text-[9px] px-1 py-0 shrink-0">
-                    {o.status}
-                  </Badge>
-                </div>
-              ))
-            ) : (
-              <p className="text-[10px] sm:text-xs text-[#969892] py-0.5">
-                No orders in transit right now.
-              </p>
-            )}
-          </div>
-
-          <div className="mt-2 flex items-center justify-between text-[10px] sm:text-[11px] text-[#666864] pt-1 border-t border-[#F0EFEA]">
-            <span className="truncate">Jabalpur Route Dispatch</span>
-            <span className="text-[#79565D] group-hover:underline flex items-center gap-0.5 shrink-0">
-              Details <ArrowRight size={11} />
-            </span>
-          </div>
-        </Link>
-      </section>
-
-      {/* ── 3. Place an Order: Search Bar ──────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-1.5">
-          <h2 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#969892]">
-            Place an Order
-          </h2>
-          <span className="hidden sm:inline text-[11px] text-[#666864]">
-            Search across 4 FMCG brand catalogues
-          </span>
+    <main className="w-full space-y-8 px-4 py-6 pb-24 sm:px-6 sm:py-8 md:pb-8 lg:px-7">
+      <section
+        aria-labelledby="dashboard-greeting"
+        className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
+      >
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#817F79]">
+            WELCOME BACK
+          </p>
+          <h1 id="dashboard-greeting" className="mt-1 text-2xl font-semibold tracking-tight text-[#272824] sm:text-3xl">
+            Namaste{retailerName ? `, ${retailerName}` : ""}
+          </h1>
+          <p className="mt-1 text-sm text-[#706F68]">
+            Here&apos;s what&apos;s available for your shop today.
+          </p>
         </div>
 
-        <form onSubmit={handleSearch} className="relative">
+        <form
+          onSubmit={handleSearch}
+          className="relative flex h-14 w-full max-w-2xl items-center rounded-full border border-white/80 bg-white/65 p-1.5 shadow-[0_8px_24px_rgba(54,44,40,0.08)] backdrop-blur-xl transition-shadow focus-within:shadow-[0_10px_30px_rgba(54,44,40,0.12)] md:max-w-[min(42vw,560px)]"
+        >
           <Search
-            size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#969892] pointer-events-none"
+            size={17}
+            aria-hidden="true"
+            className="pointer-events-none ml-3 shrink-0 text-[#89877F]"
           />
           <input
-            type="text"
+            type="search"
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search products, brands, or SKUs (e.g. Salt, Coffee, Biscuits)..."
-            className="w-full rounded-[6px] border border-[#E7E6E0] bg-white py-2.5 sm:py-3 pl-10 pr-24 text-xs sm:text-sm text-[#242724] placeholder:text-[#969892] shadow-2xs outline-none focus:border-[#79565D] focus:ring-1 focus:ring-[#79565D]/20 transition-all"
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search products, brands or SKUs"
+            aria-label="Search catalogue"
+            className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm text-[#272824] outline-none placeholder:text-[#96958F]"
           />
           <button
             type="submit"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-[4px] bg-[#79565D] px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-white hover:bg-[#67474E] transition-colors"
+            className="inline-flex h-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-[#79565D]/95 px-5 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(65,42,47,0.2)] backdrop-blur-md transition hover:bg-[#67474E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D] focus-visible:ring-offset-2"
           >
             Search
           </button>
         </form>
 
-      </section>
-
-      {/* ── 4. AI Ordering (Full Width, Accessible via Jump Link) ─ */}
-      <section id="ai-ordering" className="scroll-mt-16">
-        <h2 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#969892] mb-1.5">
-          AI Ordering
-        </h2>
-        <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 sm:p-5 shadow-2xs">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Sparkles size={15} className="text-[#79565D]" />
-              <span className="text-xs sm:text-sm font-bold text-[#242724]">
-                Kirana Fast Order Capture
-              </span>
-            </div>
-            <Badge variant="accent" className="text-[9px] px-2 py-0.5">
-              Pilot Feature
-            </Badge>
-          </div>
-          <p className="text-xs text-[#666864] mb-3">
-            Place your routine restock using voice, pasting your WhatsApp order text, or snapping a picture of your rack.
+        {loadWarnings.length > 0 && (
+          <p role="status" className="text-xs text-[#8C5A21]">
+            {loadWarnings.join(" ")}
           </p>
-
-          <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
-            <button
-              disabled
-              className="flex flex-col items-center justify-center gap-1.5 rounded-[4px] border border-dashed border-[#D5D3CB] bg-[#FAF9F6] py-3.5 sm:py-4 px-2 text-[#969892] cursor-not-allowed"
-              title="Coming soon for Jabalpur route"
-            >
-              <Mic size={20} className="text-[#79565D]" />
-              <span className="text-xs font-semibold text-[#242724]">Voice Order</span>
-              <span className="text-[10px] text-[#969892]">Speak in Hindi/English</span>
-            </button>
-            <button
-              disabled
-              className="flex flex-col items-center justify-center gap-1.5 rounded-[4px] border border-dashed border-[#D5D3CB] bg-[#FAF9F6] py-3.5 sm:py-4 px-2 text-[#969892] cursor-not-allowed"
-              title="Coming soon for Jabalpur route"
-            >
-              <MessageSquareText size={20} className="text-[#79565D]" />
-              <span className="text-xs font-semibold text-[#242724]">Text Order</span>
-              <span className="text-[10px] text-[#969892]">Paste WhatsApp list</span>
-            </button>
-            <button
-              disabled
-              className="flex flex-col items-center justify-center gap-1.5 rounded-[4px] border border-dashed border-[#D5D3CB] bg-[#FAF9F6] py-3.5 sm:py-4 px-2 text-[#969892] cursor-not-allowed"
-              title="Coming soon for Jabalpur route"
-            >
-              <Camera size={20} className="text-[#79565D]" />
-              <span className="text-xs font-semibold text-[#242724]">Photo Order</span>
-              <span className="text-[10px] text-[#969892]">Snap shelf or register</span>
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[#969892] border-t border-[#F0EFEA] pt-2.5">
-            <Clock size={12} className="shrink-0" />
-            <span>AI order processing rollout in progress. You can browse catalogue and reorder routine items below.</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ── 5. Shop by Category (Single horizontal line with More) ── */}
-      {categories.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#969892]">
-              Shop by Category
-            </h2>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => scrollCategories("left")}
-                className="hidden sm:inline-flex p-1 rounded-[3px] border border-[#E7E6E0] bg-white text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724] transition-colors"
-                title="Scroll left"
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <button
-                onClick={() => scrollCategories("right")}
-                className="hidden sm:inline-flex p-1 rounded-[3px] border border-[#E7E6E0] bg-white text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724] transition-colors"
-                title="Scroll right"
-              >
-                <ChevronRight size={13} />
-              </button>
-              <Link
-                href="/retailer/catalogue"
-                className="text-xs font-semibold text-[#79565D] hover:underline ml-2"
-              >
-                View All
-              </Link>
-            </div>
-          </div>
-
-          {/* Single Line Category Scroller */}
-          <div
-            ref={categoryScrollRef}
-            className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto scrollbar-hide"
-          >
-            <div className="flex items-center gap-2 sm:gap-2.5 w-max pb-1">
-              {categories.map((cat) => {
-                const Icon = getCategoryIcon(cat);
-                return (
-                  <Link
-                    key={cat}
-                    href={`/retailer/catalogue?category=${encodeURIComponent(cat)}`}
-                    className="group flex items-center gap-2 rounded-[6px] border border-[#E7E6E0] bg-white px-3 py-2 sm:px-3.5 sm:py-2.5 shadow-2xs hover:border-[#79565D] transition-colors shrink-0"
-                  >
-                    <div className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#F4EFF0] text-[#79565D] group-hover:bg-[#79565D] group-hover:text-white transition-colors">
-                      <Icon size={14} />
-                    </div>
-                    <span className="text-xs font-semibold text-[#242724] whitespace-nowrap">
-                      {cat}
-                    </span>
-                  </Link>
-                );
-              })}
-
-              {/* "More" Option at the end */}
-              <Link
-                href="/retailer/catalogue"
-                className="group flex items-center gap-1.5 rounded-[6px] border border-dashed border-[#D5D3CB] bg-[#FAF9F6] px-3.5 py-2 sm:py-2.5 hover:border-[#79565D] hover:bg-[#F4EFF0] transition-colors shrink-0"
-              >
-                <span className="text-xs font-semibold text-[#79565D]">More</span>
-                <ChevronRight size={13} className="text-[#79565D]" />
-              </Link>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ── 6. Buy Again: Responsive Multi-Column Grid ─────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h2 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#969892]">
-              Buy Again
-            </h2>
-            <p className="hidden sm:block text-[11px] text-[#666864]">
-              Routine Kirana restocks from your previous dispatches
-            </p>
-          </div>
-          <Link
-            href="/retailer/orders"
-            className="text-xs font-semibold text-[#79565D] hover:underline flex items-center gap-0.5"
-          >
-            Order History
-            <ChevronRight size={12} />
-          </Link>
-        </div>
-
-        {buyAgainProducts.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
-            {buyAgainProducts.map((item) => {
-              const p = item.catProduct;
-              const inStock = p ? (p.is_in_stock ?? (Number(p.quantity_available) > 0)) : false;
-              const caseRate = p && p.price !== null ? p.price * p.units_per_case : null;
-              const pieceRate = p?.price ?? item.unit_price;
-              const isAdded = addedProducts.has(String(p?.id)) || addedProducts.has(item.product_id);
-
-              return (
-                <div
-                  key={item.product_id}
-                  className="flex flex-col justify-between gap-2.5 rounded-[6px] border border-[#E7E6E0] bg-white p-3 shadow-2xs hover:border-[#D5D3CB] transition-colors"
-                >
-                  {/* Product Details Header */}
-                  <div className="flex items-start gap-2.5 min-w-0">
-                    <ProductThumbnail
-                      name={item.product_name}
-                      category={p?.category || "FMCG"}
-                      brandName={p?.brand_name}
-                      size="sm"
-                      className="shrink-0 mt-0.5"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-[#242724] truncate leading-tight">
-                        {item.product_name}
-                      </p>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[#666864] flex-wrap">
-                        <span className="font-mono text-[#969892]">{item.sku}</span>
-                        {p && (
-                          <>
-                            <span>·</span>
-                            <span>
-                              {p.pack_size}{p.pack_unit} × {p.units_per_case}/cs
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Pricing & Add to Cart Action */}
-                  <div className="flex items-center justify-between pt-2 border-t border-[#F0EFEA]">
-                    <div>
-                      {caseRate !== null ? (
-                        <div>
-                          <span className="font-mono font-bold text-xs text-[#242724] tabular-nums">
-                            {formatCurrency(caseRate)}
-                          </span>
-                          <span className="text-[10px] text-[#969892] ml-1">
-                            / case
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="font-mono text-xs text-[#242724]">
-                          {formatCurrency(pieceRate)}
-                        </span>
-                      )}
-                      <p className="text-[9px] text-[#969892] font-mono">
-                        ({formatCurrency(pieceRate)}/pc)
-                      </p>
-                    </div>
-
-                    <div>
-                      {inStock ? (
-                        <button
-                          onClick={() => handleQuickAdd(item)}
-                          disabled={isAdded}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-[4px] text-xs font-bold transition-all duration-150 ${
-                            isAdded
-                              ? "bg-[#EEF6F1] text-[#205234] border border-[#C3DEC9]"
-                              : "bg-[#79565D] text-white hover:bg-[#67474E] active:scale-95 shadow-2xs"
-                          }`}
-                          title="Add 1 case to cart"
-                        >
-                          {isAdded ? (
-                            <>
-                              <Check size={13} />
-                              <span>Added</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus size={13} />
-                              <span>Add Case</span>
-                            </>
-                          )}
-                        </button>
-                      ) : (
-                        <Badge variant="outline" className="text-[9px]">
-                          Out of stock
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="rounded-[6px] border border-dashed border-[#E7E6E0] bg-[#FAF9F6] p-6 text-center">
-            <ShoppingBag size={24} className="mx-auto text-[#969892] mb-1.5" />
-            <p className="text-xs font-bold text-[#242724]">No past orders yet</p>
-            <p className="text-[11px] text-[#666864] mt-0.5">
-              Products you order will appear here for fast 1-click reordering.
-            </p>
-            <Link
-              href="/retailer/catalogue"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-[4px] bg-[#79565D] px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#67474E] transition-colors"
-            >
-              <Package size={13} />
-              <span>Browse Full Catalogue</span>
-            </Link>
-          </div>
         )}
       </section>
 
+      <section aria-labelledby="credit-heading">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 id="credit-heading" className="text-lg font-semibold text-[#272824]">
+              Available Credit
+            </h2>
+            <p className="mt-0.5 text-xs text-[#817F79]">Your account balance and next delivery</p>
+          </div>
+          <Link
+            href="/retailer/credit"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#79565D] hover:underline"
+          >
+            Credit details <ArrowUpRight size={14} />
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <Link
+            href="/retailer/credit"
+            className="rounded-md border border-[#E8E5DE] bg-white p-4 transition-colors hover:border-[#CFC4C5] sm:p-5"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-[#706F68]">Available balance</span>
+              <Wallet size={17} className="text-[#79565D]" />
+            </div>
+            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-[#272824] sm:text-3xl">
+              {creditSummary ? formatCurrency(creditSummary.available_credit) : "—"}
+            </p>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#F0EFEA]">
+              <div
+                className={`h-full rounded-full ${creditBarColor}`}
+                style={{ width: `${creditSummary ? creditUtilization : 0}%` }}
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-[#706F68]">
+              <span>
+                Used {creditSummary ? formatCurrency(creditSummary.current_outstanding) : "—"}
+                {creditSummary && ` · ${creditUtilization.toFixed(0)}%`}
+              </span>
+              <span>
+                Limit {creditSummary ? formatCurrency(creditSummary.credit_limit) : "—"}
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            href="/retailer/orders"
+            className="flex min-h-40 flex-col justify-between rounded-md border border-[#E8E5DE] bg-white p-4 transition-colors hover:border-[#CFC4C5] sm:p-5"
+          >
+            <div className="flex items-center justify-between">
+              <span>
+                <span className="block text-xs font-medium text-[#706F68]">Order coming soon</span>
+                <span className="mt-1 block text-[11px] text-[#817F79]">
+                  Get your shop ready
+                </span>
+              </span>
+              <ShoppingBag size={17} className="text-[#79565D]" />
+            </div>
+            {ordersUnavailable ? (
+              <p className="mt-4 text-sm text-[#817F79]">
+                Order data could not be loaded.
+              </p>
+            ) : upcomingOrders[0] ? (
+              <div className="mt-4 flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-[#272824]">
+                    {upcomingOrders[0].order_number}
+                  </p>
+                  <p className="mt-1 text-xs text-[#817F79]">
+                    {upcomingOrderMessage}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="font-semibold tabular-nums text-[#272824]">
+                    {formatCurrency(upcomingOrders[0].total_amount)}
+                  </p>
+                  <span
+                    className={`mt-1 inline-flex rounded px-2 py-1 text-[10px] font-medium ${orderStatusClass(upcomingOrders[0].status)}`}
+                  >
+                    {upcomingOrders[0].status}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-[#817F79]">
+                No incoming orders right now. Place an order and we&apos;ll keep you updated.
+              </p>
+            )}
+          </Link>
+        </div>
+      </section>
+
+      <section aria-labelledby="buy-again-heading">
+        <SectionHeading
+          id="buy-again-heading"
+          title="Buy Again"
+          description="Products from your recent orders"
+          href="/retailer/orders"
+          linkLabel="Order history"
+        />
+        {ordersUnavailable || catalogueUnavailable ? (
+          <EmptyState
+            icon={ShoppingBag}
+            title="Buy Again is unavailable"
+            description="Order history or catalogue data could not be loaded."
+          />
+        ) : buyAgainProducts.length > 0 ? (
+          <ProductGrid>
+            {buyAgainProducts.map(({ product, quantityUnit }) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                added={addedProducts.has(product.id)}
+                onAdd={() => handleQuickAdd(product, quantityUnit)}
+              />
+            ))}
+          </ProductGrid>
+        ) : (
+          <EmptyState
+            icon={ShoppingBag}
+            title="No previous products to reorder"
+            description="Products from your orders will appear here."
+            href="/retailer/catalogue"
+            linkLabel="Browse catalogue"
+          />
+        )}
+      </section>
+
+      <section aria-labelledby="categories-heading">
+        <SectionHeading
+          id="categories-heading"
+          title="Shop by Category"
+          description="Browse the catalogue by range"
+          href="/retailer/catalogue"
+          linkLabel="View catalogue"
+        />
+        {catalogueUnavailable ? (
+          <EmptyState
+            icon={Package}
+            title="Categories could not be loaded"
+            description="Please try again in a moment."
+          />
+        ) : categories.length > 0 ? (
+          <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+            <div className="flex w-max gap-5 pb-2 sm:gap-6">
+            {categories.map(([category, product]) => {
+              const Icon = CATEGORY_ICONS[category] ?? Package;
+              return (
+                <Link
+                  key={category}
+                  href={`/retailer/catalogue?category=${encodeURIComponent(category)}`}
+                  className="group flex w-[92px] shrink-0 flex-col items-center text-center sm:w-[112px] md:w-[128px]"
+                >
+                  <span className="flex h-[76px] w-[76px] items-center justify-center overflow-hidden bg-[#F0EFEA] transition-transform group-hover:scale-[1.03] sm:h-[88px] sm:w-[88px] md:h-[104px] md:w-[104px]">
+                    {product.image_url ? (
+                      <img
+                        src={product.image_url}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-contain mix-blend-multiply"
+                      />
+                    ) : (
+                      <Icon size={28} aria-hidden="true" className="text-[#79565D]" />
+                    )}
+                  </span>
+                  <span className="mt-2 w-full truncate text-xs font-semibold text-[#272824]">
+                    {category}
+                  </span>
+                </Link>
+              );
+            })}
+            </div>
+          </div>
+        ) : (
+          <EmptyState
+            icon={Package}
+            title="Categories are unavailable"
+            description="The catalogue has no categories to display right now."
+          />
+        )}
+      </section>
+
+      <section aria-labelledby="offers-heading">
+        <SectionHeading
+          id="offers-heading"
+          title="Offers & Schemes"
+          description="Offers available on your retailer catalogue"
+          href="/retailer/catalogue"
+          linkLabel="Shop offers"
+        />
+        {catalogueUnavailable ? (
+          <EmptyState
+            icon={Tag}
+            title="Offers could not be loaded"
+            description="Please try again in a moment."
+          />
+        ) : activeOffers.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {activeOffers.map(({ product, scheme }, index) => (
+              <Link
+                key={`${product.id}-${scheme.scheme_name}-${index}`}
+                href={`/retailer/catalogue?search=${encodeURIComponent(product.sku)}`}
+                className="flex min-w-0 items-center gap-3 rounded-md border border-[#E8E5DE] bg-white p-3 transition-colors hover:border-[#CFC4C5]"
+              >
+                <ProductThumbnail
+                  name={product.name}
+                  category={product.category}
+                  brandName={product.brand_name}
+                  imageUrl={product.image_url}
+                  size="md"
+                  className="h-12 w-12 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-[#79565D]">
+                    <Tag size={12} /> Offer
+                  </span>
+                  <span className="mt-1 block truncate text-sm font-semibold text-[#272824]">
+                    {formatScheme(scheme)}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-[#817F79]">
+                    {product.brand_name} · {product.name}
+                  </span>
+                </span>
+                <ChevronRight size={15} className="shrink-0 text-[#817F79]" />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Tag}
+            title="No active offers"
+            description="Retailer-eligible schemes will appear here when available."
+          />
+        )}
+      </section>
+
+      <section aria-labelledby="popular-heading">
+        <SectionHeading
+          id="popular-heading"
+          title="Popular Products"
+          description="Frequently ordered items from your order history"
+          href="/retailer/catalogue"
+          linkLabel="Full catalogue"
+        />
+        {ordersUnavailable || catalogueUnavailable ? (
+          <EmptyState
+            icon={Package}
+            title="Popular products are unavailable"
+            description="Order history or catalogue data could not be loaded."
+          />
+        ) : popularProducts.length > 0 ? (
+          <ProductGrid>
+            {popularProducts.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                added={addedProducts.has(product.id)}
+                onAdd={() => handleQuickAdd(product)}
+              />
+            ))}
+          </ProductGrid>
+        ) : (
+          <EmptyState
+            icon={Package}
+            title={orders.length > 0 ? "No popular products available" : "No purchase history yet"}
+            description={
+              orders.length > 0
+                ? "In-stock products with a retailer price will appear here."
+                : "Products you order will appear here based on your order history."
+            }
+            href="/retailer/catalogue"
+            linkLabel="Browse catalogue"
+          />
+        )}
+      </section>
+
+      <section aria-labelledby="recent-orders-heading">
+        <SectionHeading
+          id="recent-orders-heading"
+          title="Recent Orders"
+          description="Your latest order activity"
+          href="/retailer/orders"
+          linkLabel="All orders"
+        />
+        {ordersUnavailable ? (
+          <EmptyState
+            icon={ShoppingBag}
+            title="Recent orders could not be loaded"
+            description="Please try again in a moment."
+          />
+        ) : recentOrders.length > 0 ? (
+          <div className="overflow-hidden rounded-md border border-[#E8E5DE] bg-white">
+            {recentOrders.slice(0, 5).map((order, index) => (
+              <Link
+                key={order.id}
+                href="/retailer/orders"
+                className={`flex items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-[#FAF9F6] sm:px-5 ${
+                  index > 0 ? "border-t border-[#F0EFEA]" : ""
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-[#F4EFF0] text-[#79565D]">
+                    <Package size={16} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-[#272824]">
+                      {order.order_number}
+                    </span>
+                    <span className="mt-1 flex items-center gap-1 text-xs text-[#817F79]">
+                      <Clock3 size={12} />
+                      {new Date(order.created_at).toLocaleDateString("en-IN")}
+                    </span>
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-1.5">
+                  <span className="text-sm font-semibold tabular-nums text-[#272824]">
+                    {formatCurrency(order.total_amount)}
+                  </span>
+                  <span
+                    className={`rounded px-2 py-0.5 text-[10px] font-medium ${orderStatusClass(order.status)}`}
+                  >
+                    {order.status}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={ShoppingBag}
+            title="No recent orders"
+            description="Your order updates will appear here."
+            href="/retailer/catalogue"
+            linkLabel="Start shopping"
+          />
+        )}
+      </section>
+
+      <p className="sr-only" aria-live="polite" role="status">
+        {cartMessage}
+      </p>
+    </main>
+  );
+}
+
+function SectionHeading({
+  id,
+  title,
+  description,
+  href,
+  linkLabel,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  linkLabel: string;
+}) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <div>
+        <h2 id={id} className="text-lg font-semibold text-[#272824]">
+          {title}
+        </h2>
+        <p className="mt-0.5 text-xs text-[#817F79]">{description}</p>
+      </div>
+      <Link
+        href={href}
+        className="inline-flex min-h-9 shrink-0 items-center gap-1 text-xs font-semibold text-[#79565D] hover:underline"
+      >
+        {linkLabel} <ChevronRight size={14} />
+      </Link>
+    </div>
+  );
+}
+
+function ProductGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
+      {children}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  href,
+  linkLabel,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  href?: string;
+  linkLabel?: string;
+}) {
+  return (
+    <div className="rounded-md border border-dashed border-[#DDD9D1] bg-white px-4 py-7 text-center">
+      <Icon size={22} aria-hidden="true" className="mx-auto text-[#8D8981]" />
+      <p className="mt-2 text-sm font-semibold text-[#272824]">{title}</p>
+      <p className="mt-1 text-xs text-[#817F79]">{description}</p>
+      {href && linkLabel && (
+        <Link
+          href={href}
+          className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded border border-[#E6E3DC] px-3 text-xs font-semibold text-[#67474E] hover:bg-[#FAF9F6]"
+        >
+          {linkLabel} <ArrowRight size={13} />
+        </Link>
+      )}
     </div>
   );
 }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Wallet,
   ArrowUpRight,
   ArrowDownLeft,
   Calendar,
@@ -12,18 +11,14 @@ import {
   CheckCircle2,
   Clock,
   Download,
-  Filter,
   RefreshCw,
   Search,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  ShieldCheck,
   FileText,
   X,
   CreditCard,
-  Building2,
-  Phone,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -84,137 +79,61 @@ interface LedgerResponse {
   total_count: number;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Bilingual Translations (English & Hindi)                          */
-/* ------------------------------------------------------------------ */
-
-type SupportedLang = "en" | "hi";
-
-const DICT: Record<SupportedLang, Record<string, string>> = {
-  en: {
-    pageTitle: "My Credit",
-    pageSubtitle: "Your shop's credit overview.",
-    availableCredit: "Available Credit",
-    availableForOrders: "Available for new order dispatches",
-    totalCreditLimit: "Total Credit Limit",
-    creditUtilized: "Credit Used",
-    utilization: "Utilization",
-    healthyStatus: "Healthy Utilization",
-    cautionStatus: "Caution • Approaching Limit",
-    exceededStatus: "High Utilization • Limit Exceeded",
-    unassignedStatus: "Limit Not Sanctioned",
-    outstandingDues: "Outstanding Dues",
-    outstandingDuesSub: "Unsettled balance across approved orders",
-    allSettled: "All cleared • No dues pending",
-    nextDueDate: "Next Due Date",
-    noDuesScheduled: "No pending dues",
-    overdueBy: "Overdue by",
-    dueIn: "Due in",
-    today: "Due today",
-    days: "days",
-    netTerms: "Terms",
-    daysNet: "Days Net",
-    recentTransactions: "Recent Transactions",
-    recentTransactionsSub: "Your latest credit debits and payment receipts",
-    viewAllTransactions: "View All Transactions",
-    closeHistory: "Back to Overview",
-    allTransactionsTitle: "Credit Transaction History",
-    allTransactionsSub: "Complete chronological passbook of order debits, settlements and credits",
-    filterAll: "All",
-    filterDebits: "Order Debits",
-    filterPayments: "Payments Received",
-    filterNotes: "Credit Notes",
-    searchPlaceholder: "Search by order number or note...",
-    orderDebit: "Order Debit",
-    paymentReceived: "Payment Received",
-    creditNote: "Credit Note",
-    adjustment: "Adjustment",
-    balanceAfter: "Balance after",
-    downloadStatement: "Statement (CSV)",
-    refresh: "Refresh",
-    loading: "Loading credit overview...",
-    emptyTransactions: "No transactions recorded yet",
-    emptyTransactionsSub: "Your credit ledger will record debits when orders are approved, and credits when payments are verified.",
-    unsettledOrdersTitle: "Unsettled Invoices Pending Clearance",
-    unsettledOrdersSub: "Orders currently contributing to your outstanding dues",
-    orderNo: "Order #",
-    orderDate: "Date",
-    amount: "Amount",
-    status: "Status",
-    viewOrders: "View Orders",
-    creditPolicyTitle: "Distributor Credit Billing Policy",
-    creditPolicyDesc: "Approved orders automatically utilize sanctioned credit. Payments made to the delivery salesman or Jabalpur depot instantly restore your available credit line.",
-    retry: "Retry Loading",
-    errorLoading: "Unable to load credit account",
-    showing: "Showing",
-    of: "of",
-    transactions: "transactions",
-    page: "Page",
-    prev: "Previous",
-    next: "Next",
-  },
-  hi: {
-    pageTitle: "मेरा क्रेडिट",
-    pageSubtitle: "आपकी दुकान का क्रेडिट विवरण।",
-    availableCredit: "उपलब्ध क्रेडिट",
-    availableForOrders: "नए ऑर्डर के लिए उपलब्ध राशि",
-    totalCreditLimit: "कुल क्रेडिट सीमा",
-    creditUtilized: "उपयोग किया गया क्रेडिट",
-    utilization: "उपयोग",
-    healthyStatus: "स्वस्थ उपयोग",
-    cautionStatus: "सावधानी • सीमा के करीब",
-    exceededStatus: "अत्यधिक उपयोग • सीमा समाप्त",
-    unassignedStatus: "क्रेडिट सीमा स्वीकृत नहीं",
-    outstandingDues: "बकाया राशि",
-    outstandingDuesSub: "स्वीकृत ऑर्डरों का असमाशोधित बकाया",
-    allSettled: "पूर्ण चुकता • कोई बकाया नहीं",
-    nextDueDate: "अगली भुगतान तिथि",
-    noDuesScheduled: "कोई बकाया नहीं",
-    overdueBy: "समय सीमा पार",
-    dueIn: "देय तिथि शेष",
-    today: "आज देय",
-    days: "दिन",
-    netTerms: "अवधि",
-    daysNet: "दिन नेट",
-    recentTransactions: "हाल के लेन-देन",
-    recentTransactionsSub: "आपके नवीनतम ऑर्डर डेबिट और प्राप्त भुगतान",
-    viewAllTransactions: "सभी लेन-देन देखें",
-    closeHistory: "अवलोकन पर लौटें",
-    allTransactionsTitle: "क्रेडिट लेन-देन इतिहास",
-    allTransactionsSub: "ऑर्डर डेबिट, भुगतान और क्रेडिट का पूर्ण बहीखाता",
-    filterAll: "सभी",
-    filterDebits: "ऑर्डर डेबिट",
-    filterPayments: "प्राप्त भुगतान",
-    filterNotes: "क्रेडिट नोट",
-    searchPlaceholder: "ऑर्डर नंबर या विवरण से खोजें...",
-    orderDebit: "ऑर्डर डेबिट",
-    paymentReceived: "भुगतान प्राप्त",
-    creditNote: "क्रेडिट नोट",
-    adjustment: "समायोजन",
-    balanceAfter: "शेष बकाया",
-    downloadStatement: "स्टेटमेंट डाउनलोड करें",
-    refresh: "ताज़ा करें",
-    loading: "क्रेडिट विवरण लोड हो रहा है...",
-    emptyTransactions: "अभी कोई लेन-देन दर्ज नहीं है",
-    emptyTransactionsSub: "ऑर्डर स्वीकृत होने पर डेबिट और भुगतान होने पर क्रेडिट स्वतः जुड़ेंगे।",
-    unsettledOrdersTitle: "लंबित इनवॉइस",
-    unsettledOrdersSub: "वर्तमान में बकाया राशि से जुड़े स्वीकृत ऑर्डर",
-    orderNo: "ऑर्डर सं.",
-    orderDate: "दिनांक",
-    amount: "राशि",
-    status: "स्थिति",
-    viewOrders: "ऑर्डर देखें",
-    creditPolicyTitle: "डिस्ट्रिब्यूटर क्रेडिट नीति",
-    creditPolicyDesc: "स्वीकृत ऑर्डर आपकी क्रेडिट सीमा से घटते हैं। डिलीवरी वैन या जबलपुर डिपो पर भुगतान होते ही क्रेडिट तुरंत बहाल हो जाता है।",
-    retry: "पुनः प्रयास करें",
-    errorLoading: "क्रेडिट विवरण लोड करने में असमर्थ",
-    showing: "दिखाया जा रहा है",
-    of: "कुल",
-    transactions: "लेन-देन",
-    page: "पृष्ठ",
-    prev: "पिछला",
-    next: "अगला",
-  },
+const DICT: Record<string, string> = {
+  pageTitle: "My Credit",
+  pageSubtitle: "Your shop's credit overview.",
+  availableCredit: "Available Credit",
+  availableForOrders: "Available for new order dispatches",
+  totalCreditLimit: "Total Credit Limit",
+  creditUtilized: "Credit Used",
+  utilization: "Utilization",
+  outstandingDues: "Outstanding Dues",
+  outstandingDuesSub: "Unsettled balance across approved orders",
+  allSettled: "All cleared • No dues pending",
+  nextDueDate: "Next Due Date",
+  noDuesScheduled: "No pending dues",
+  overdueBy: "Overdue by",
+  dueIn: "Due in",
+  today: "Due today",
+  days: "days",
+  netTerms: "Terms",
+  daysNet: "Days Net",
+  recentTransactions: "Recent Transactions",
+  recentTransactionsSub: "Your latest credit debits and payment receipts",
+  viewAllTransactions: "View All Transactions",
+  closeHistory: "Back to Overview",
+  allTransactionsTitle: "Credit Transaction History",
+  allTransactionsSub: "Complete chronological passbook of order debits, settlements and credits",
+  filterAll: "All",
+  filterDebits: "Order Debits",
+  filterPayments: "Payments Received",
+  filterNotes: "Credit Notes",
+  searchPlaceholder: "Search by order number or note...",
+  orderDebit: "Order Debit",
+  paymentReceived: "Payment Received",
+  creditNote: "Credit Note",
+  adjustment: "Adjustment",
+  balanceAfter: "Balance after",
+  downloadStatement: "Statement (CSV)",
+  refresh: "Refresh",
+  loading: "Loading credit overview...",
+  emptyTransactions: "No transactions recorded yet",
+  emptyTransactionsSub: "Your credit ledger will record debits when orders are approved, and credits when payments are verified.",
+  unsettledOrdersTitle: "Unsettled Invoices Pending Clearance",
+  unsettledOrdersSub: "Orders currently contributing to your outstanding dues",
+  orderNo: "Order #",
+  orderDate: "Date",
+  amount: "Amount",
+  status: "Status",
+  viewOrders: "View Orders",
+  retry: "Retry Loading",
+  errorLoading: "Unable to load credit account",
+  showing: "Showing",
+  of: "of",
+  transactions: "transactions",
+  page: "Page",
+  prev: "Previous",
+  next: "Next",
 };
 
 /* ------------------------------------------------------------------ */
@@ -270,9 +189,6 @@ export default function RetailerCreditPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  // Language state
-  const [lang, setLang] = useState<SupportedLang>("en");
-
   // Credit Data State
   const [data, setData] = useState<LedgerResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -290,17 +206,7 @@ export default function RetailerCreditPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
-  // Sync language from storage or settings
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedLang = localStorage.getItem("orderly_lang") as SupportedLang;
-      if (savedLang === "en" || savedLang === "hi") {
-        setLang(savedLang);
-      }
-    }
-  }, []);
-
-  const t = DICT[lang];
+  const t = DICT;
 
   // Fetch full ledger statement
   const fetchCreditData = useCallback(async () => {
@@ -380,39 +286,19 @@ export default function RetailerCreditPage() {
   const currentOutstandingNum = Number(summary?.current_outstanding ?? 0);
   const utilizationPct = summary?.utilization_percentage ?? 0;
 
-  // Clear utilization status & color scheme (accessible with text + contrast)
-  const utilizationState = useMemo(() => {
+  // Keep the utilization bar color aligned with the account thresholds.
+  const utilizationBarClass = useMemo(() => {
     if (creditLimitNum <= 0) {
-      return {
-        label: t.unassignedStatus,
-        colorClass: "text-[#666864] bg-[#F0EFEA] border-[#D5D3CB]",
-        barClass: "bg-[#969892]",
-        type: "gray" as const,
-      };
+      return "bg-[#969892]";
     }
     if (currentOutstandingNum > creditLimitNum || utilizationPct >= 90) {
-      return {
-        label: t.exceededStatus,
-        colorClass: "text-[#991B1B] bg-[#FEF2F2] border-[#FCA5A5]",
-        barClass: "bg-[#DC2626]",
-        type: "red" as const,
-      };
+      return "bg-[#DC2626]";
     }
     if (utilizationPct >= 70) {
-      return {
-        label: t.cautionStatus,
-        colorClass: "text-[#92400E] bg-[#FFFBEB] border-[#FCD34D]",
-        barClass: "bg-[#D97706]",
-        type: "amber" as const,
-      };
+      return "bg-[#D97706]";
     }
-    return {
-      label: t.healthyStatus,
-      colorClass: "text-[#166534] bg-[#F0FDF4] border-[#86EFAC]",
-      barClass: "bg-[#16A34A]",
-      type: "green" as const,
-    };
-  }, [creditLimitNum, currentOutstandingNum, utilizationPct, t]);
+    return "bg-[#16A34A]";
+  }, [creditLimitNum, currentOutstandingNum, utilizationPct]);
 
   // Earliest Next Due Date computation
   const earliestDueInfo = useMemo(() => {
@@ -503,7 +389,7 @@ export default function RetailerCreditPage() {
   /* ------------------------------------------------------------------ */
   if (authLoading || (loading && !data)) {
     return (
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+      <div className="w-full max-w-none px-4 py-6 sm:px-6 sm:py-8 lg:px-4 space-y-6">
         {/* Header Skeleton */}
         <div className="flex items-center justify-between">
           <div className="space-y-2">
@@ -556,7 +442,7 @@ export default function RetailerCreditPage() {
   if (error && !data) {
     return (
       <div className="w-full max-w-lg mx-auto px-4 py-16 text-center">
-        <div className="rounded-xl border border-red-200 bg-white p-8 shadow-sm">
+        <div className="rounded-md border border-red-200 bg-white p-8">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
             <AlertTriangle className="h-6 w-6" />
           </div>
@@ -580,66 +466,34 @@ export default function RetailerCreditPage() {
   /*  Main UI                                                           */
   /* ------------------------------------------------------------------ */
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+    <div className="w-full max-w-none space-y-5 px-4 py-6 sm:px-6 sm:py-8 lg:px-4">
       {/* 1. CREDIT PAGE HEADER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#E7E6E0] pb-5">
-        <div className="flex items-start gap-3.5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white border border-[#E7E6E0] shadow-sm text-[#79565D]">
-            <Wallet className="h-6 w-6" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#242724]">
-                {t.pageTitle}
-              </h1>
-              {summary && (
-                <span className="inline-flex items-center rounded-full bg-[#F4EFF0] px-2.5 py-0.5 text-xs font-semibold text-[#67474E] border border-[#EBDDE0]">
-                  {summary.retailer.retailer_code}
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-sm text-[#666864]">{t.pageSubtitle}</p>
-          </div>
+      <div className="flex items-center justify-between gap-2 border-b border-[#E7E6E0] pb-5">
+        <div className="min-w-0">
+          <h1 className="whitespace-nowrap text-2xl font-semibold tracking-tight text-[#242724] sm:text-4xl">
+            {t.pageTitle}
+          </h1>
         </div>
-
-        {/* Top Actions: Refresh, CSV Export, Language Toggle */}
-        <div className="flex items-center gap-2 sm:self-center flex-wrap">
-          {/* Quick Language switch */}
+        <div className="flex shrink-0 items-center justify-end gap-2">
           <button
-            onClick={() => {
-              const next = lang === "en" ? "hi" : "en";
-              setLang(next);
-              if (typeof window !== "undefined") {
-                localStorage.setItem("orderly_lang", next);
-              }
-            }}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-[#E7E6E0] bg-white px-3 py-2 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition shadow-sm"
-            aria-label="Switch Language"
-          >
-            <span>{lang === "en" ? "हिंदी" : "English"}</span>
-          </button>
-
-          {/* Refresh Button */}
-          <button
+            type="button"
             onClick={() => void fetchCreditData()}
             disabled={loading}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-[#E7E6E0] bg-white px-3.5 py-2 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition shadow-sm disabled:opacity-50"
+            className="grid size-9 shrink-0 place-items-center rounded border border-[#E7E6E0] bg-white text-[#666864] transition-colors hover:bg-[#F6F5F1] hover:text-[#242724] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/30 disabled:cursor-not-allowed disabled:opacity-50 sm:size-10"
             aria-label={t.refresh}
+            title={t.refresh}
           >
-            <RefreshCw
-              className={`h-4 w-4 ${loading ? "animate-spin text-[#79565D]" : "text-[#666864]"}`}
-            />
-            <span className="hidden sm:inline">{t.refresh}</span>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-[#79565D]" : ""}`} />
           </button>
-
-          {/* Download Statement CSV Button */}
           <button
+            type="button"
             onClick={handleExportCsv}
             disabled={isExporting || items.length === 0}
-            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md bg-[#242724] px-4 py-2 text-xs font-semibold text-white hover:bg-[#79565D] transition shadow-sm disabled:opacity-50"
+            className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded bg-[#79565D] px-2.5 text-[11px] font-medium text-white transition-colors hover:bg-[#67474E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10 sm:gap-2 sm:px-3.5 sm:text-xs"
           >
-            <Download className="h-4 w-4" />
-            <span>{isExporting ? "Exporting..." : t.downloadStatement}</span>
+            <Download className="size-3.5 sm:size-4" />
+            <span className="sm:hidden">{isExporting ? "Exporting" : "Statement"}</span>
+            <span className="hidden sm:inline">{isExporting ? "Exporting..." : "Download statement"}</span>
           </button>
         </div>
       </div>
@@ -647,12 +501,12 @@ export default function RetailerCreditPage() {
       {/* 2. AVAILABLE CREDIT CARD (The Most Prominent Section) */}
       <section
         aria-labelledby="available-credit-heading"
-        className="relative overflow-hidden rounded-xl border border-[#E7E6E0] bg-white p-6 sm:p-8 shadow-sm transition"
+        className="relative overflow-hidden rounded-md border border-[#E7E6E0] bg-white p-5 sm:p-7"
       >
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-          <div className="space-y-2 flex-1">
+          <div className="flex-1 space-y-2">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#F4EFF0] text-[#79565D]">
+              <span className="flex h-6 w-6 items-center justify-center rounded bg-[#F4EFF0] text-[#79565D]">
                 <CreditCard className="h-3.5 w-3.5" />
               </span>
               <h2
@@ -664,25 +518,9 @@ export default function RetailerCreditPage() {
             </div>
 
             {/* Large Available Amount */}
-            <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight font-mono text-[#242724] tabular-nums">
-                {formatCurrency(availableCreditNum)}
-              </span>
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border ${utilizationState.colorClass}`}
-              >
-                {utilizationState.type === "green" && (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                )}
-                {utilizationState.type === "amber" && (
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                )}
-                {utilizationState.type === "red" && (
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span>{utilizationState.label}</span>
-              </span>
-            </div>
+            <span className="text-3xl font-semibold tracking-tight font-mono text-[#242724] tabular-nums sm:text-4xl">
+              {formatCurrency(availableCreditNum)}
+            </span>
 
             <p className="text-xs sm:text-sm text-[#666864]">
               {t.availableForOrders}
@@ -704,7 +542,7 @@ export default function RetailerCreditPage() {
         </div>
 
         {/* Credit Utilization Progress Bar */}
-        <div className="mt-8 space-y-2.5">
+        <div className="mt-7 space-y-2.5">
           <div className="flex items-center justify-between text-xs sm:text-sm">
             <span className="font-semibold text-[#242724]">
               {t.creditUtilized}:{" "}
@@ -718,9 +556,9 @@ export default function RetailerCreditPage() {
           </div>
 
           {/* Bar track */}
-          <div className="h-3.5 w-full overflow-hidden rounded-full bg-[#F0EFEA] border border-[#E7E6E0]">
+          <div className="h-2.5 w-full overflow-hidden rounded-sm border border-[#E7E6E0] bg-[#F0EFEA]">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${utilizationState.barClass}`}
+              className={`h-full transition-all duration-300 ${utilizationBarClass}`}
               style={{ width: `${Math.min(utilizationPct, 100)}%` }}
               role="progressbar"
               aria-valuenow={utilizationPct}
@@ -745,10 +583,10 @@ export default function RetailerCreditPage() {
       {/* 3. CREDIT SUMMARY (Two Compact Cards) */}
       <section
         aria-label="Credit Summary Overview"
-        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2"
       >
         {/* Card 1: Outstanding Dues */}
-        <div className="rounded-xl border border-[#E7E6E0] bg-white p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+        <div className="flex flex-col justify-between rounded-md border border-[#E7E6E0] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#666864]">
               {t.outstandingDues}
@@ -772,7 +610,7 @@ export default function RetailerCreditPage() {
           {currentOutstandingNum > 0 && outstandingInvoices.length > 0 && (
             <div className="mt-4 pt-3 border-t border-[#E7E6E0] flex items-center justify-between text-xs">
               <span className="text-[#666864]">
-                {outstandingInvoices.length} {t.status === "Status" ? "unsettled order(s)" : "लंबित ऑर्डर"}
+                {outstandingInvoices.length} unsettled order{outstandingInvoices.length === 1 ? "" : "s"}
               </span>
               <Link
                 href="/retailer/orders"
@@ -786,7 +624,7 @@ export default function RetailerCreditPage() {
         </div>
 
         {/* Card 2: Next Due Date */}
-        <div className="rounded-xl border border-[#E7E6E0] bg-white p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+        <div className="flex flex-col justify-between rounded-md border border-[#E7E6E0] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#666864]">
               {t.nextDueDate}
@@ -832,13 +670,13 @@ export default function RetailerCreditPage() {
       {outstandingInvoices.length > 0 && viewMode === "overview" && (
         <section
           aria-labelledby="unsettled-invoices-heading"
-          className="rounded-xl border border-[#E7E6E0] bg-white shadow-sm overflow-hidden"
+          className="overflow-hidden rounded-md border border-[#E7E6E0] bg-white"
         >
           <div className="border-b border-[#E7E6E0] px-5 py-4 flex items-center justify-between bg-[#FBFBFA]">
             <div>
               <h2
                 id="unsettled-invoices-heading"
-                className="text-sm font-bold uppercase tracking-wider text-[#242724]"
+                className="text-sm font-semibold uppercase tracking-wider text-[#242724]"
               >
                 {t.unsettledOrdersTitle}
               </h2>
@@ -846,7 +684,7 @@ export default function RetailerCreditPage() {
                 {t.unsettledOrdersSub}
               </p>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#F0EFEA] text-[#242724]">
+            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-[#F0EFEA] text-[#242724]">
               {outstandingInvoices.length}
             </span>
           </div>
@@ -908,13 +746,13 @@ export default function RetailerCreditPage() {
       {viewMode === "overview" && (
         <section
           aria-labelledby="recent-transactions-heading"
-          className="rounded-xl border border-[#E7E6E0] bg-white shadow-sm overflow-hidden"
+          className="overflow-hidden rounded-md border border-[#E7E6E0] bg-white"
         >
           <div className="border-b border-[#E7E6E0] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#FBFBFA]">
             <div>
               <h2
                 id="recent-transactions-heading"
-                className="text-base sm:text-lg font-bold text-[#242724]"
+                className="text-base sm:text-lg font-semibold text-[#242724]"
               >
                 {t.recentTransactions}
               </h2>
@@ -929,12 +767,9 @@ export default function RetailerCreditPage() {
                 setViewMode("history");
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-[#79565D] bg-[#F4EFF0] px-4 py-2 text-xs font-bold text-[#67474E] hover:bg-[#EBDDE0] transition"
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-[#79565D] bg-[#F4EFF0] px-4 py-2 text-xs font-medium text-[#67474E] hover:bg-[#EBDDE0] transition"
             >
               <span>{t.viewAllTransactions}</span>
-              <span className="ml-1 rounded bg-[#67474E] text-white px-1.5 py-0.2 text-[10px]">
-                {items.length}
-              </span>
               <ChevronRight className="h-4 w-4 ml-0.5" />
             </button>
           </div>
@@ -1043,7 +878,7 @@ export default function RetailerCreditPage() {
                 }}
                 className="text-xs sm:text-sm font-bold text-[#79565D] hover:underline inline-flex items-center gap-1 min-h-[44px]"
               >
-                <span>{t.viewAllTransactions} ({items.length})</span>
+                <span>{t.viewAllTransactions}</span>
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -1055,7 +890,7 @@ export default function RetailerCreditPage() {
       {viewMode === "history" && (
         <section
           aria-labelledby="all-transactions-heading"
-          className="rounded-xl border border-[#E7E6E0] bg-white shadow-sm overflow-hidden"
+          className="overflow-hidden rounded-md border border-[#E7E6E0] bg-white"
         >
           {/* Header with Back Button */}
           <div className="border-b border-[#E7E6E0] p-5 sm:p-6 bg-[#FBFBFA]">
@@ -1070,7 +905,7 @@ export default function RetailerCreditPage() {
                 </button>
                 <h2
                   id="all-transactions-heading"
-                  className="text-xl sm:text-2xl font-bold text-[#242724]"
+                  className="text-xl sm:text-2xl font-semibold text-[#242724]"
                 >
                   {t.allTransactionsTitle}
                 </h2>
@@ -1083,7 +918,7 @@ export default function RetailerCreditPage() {
               <button
                 onClick={handleExportCsv}
                 disabled={isExporting || items.length === 0}
-                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-[#E7E6E0] bg-white px-3.5 py-2 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition shadow-sm self-start sm:self-center"
+                className="inline-flex min-h-[44px] items-center gap-1.5 self-start rounded border border-[#E7E6E0] bg-white px-3.5 py-2 text-xs font-medium text-[#242724] transition-colors hover:bg-[#F0EFEA] sm:self-center"
               >
                 <Download className="h-4 w-4 text-[#79565D]" />
                 <span>{isExporting ? "Generating..." : t.downloadStatement}</span>
@@ -1107,7 +942,7 @@ export default function RetailerCreditPage() {
                         tab.id as "ALL" | "ORDER_DEBIT" | "PAYMENT" | "CREDIT_NOTE"
                       )
                     }
-                    className={`min-h-[40px] px-3.5 py-1.5 text-xs font-semibold rounded-md border transition ${
+                    className={`min-h-[40px] px-3.5 py-1.5 text-xs font-medium rounded-md border transition ${
                       filterType === tab.id
                         ? "border-[#242724] bg-[#242724] text-white"
                         : "border-[#E7E6E0] bg-white text-[#666864] hover:bg-[#F0EFEA]"
@@ -1278,20 +1113,6 @@ export default function RetailerCreditPage() {
         </section>
       )}
 
-      {/* 7. DISTRIBUTOR CREDIT POLICY NOTICE */}
-      <footer className="rounded-xl border border-[#E7E6E0] bg-white p-5 sm:p-6 shadow-sm flex items-start gap-4">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#F4EFF0] text-[#79565D] mt-0.5">
-          <ShieldCheck className="h-5 w-5" />
-        </span>
-        <div className="text-xs sm:text-sm text-[#666864] space-y-1">
-          <h3 className="font-bold text-[#242724]">
-            {t.creditPolicyTitle}
-          </h3>
-          <p className="leading-relaxed">
-            {t.creditPolicyDesc}
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
