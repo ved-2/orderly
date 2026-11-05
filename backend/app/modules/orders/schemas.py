@@ -32,3 +32,9 @@ class OrderRejectRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
     model_config = ConfigDict(extra="forbid")
+
+
+class OrderHoldRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+    model_config = ConfigDict(extra="forbid")

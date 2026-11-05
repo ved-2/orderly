@@ -6,7 +6,7 @@ import csv
 import io
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
@@ -28,6 +28,7 @@ from app.modules.orders.schemas import (
     OrderCreate,
     OrderApproveRequest,
     OrderRejectRequest,
+    OrderHoldRequest,
 )
 from app.modules.orders.service import create_order_draft
 
@@ -247,6 +248,166 @@ def submit_order(
         raise
 
 
+@router.get("/desk")
+def list_desk_orders(
+    status_filter: str | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("ORDER_DESK", "DISTRIBUTOR_ADMIN")
+    ),
+):
+    # Compute counts across key statuses for tab badges
+    count_query = select(Order.status, func.count(Order.id)).group_by(Order.status)
+    status_counts_rows = db.execute(count_query).all()
+    counts = {
+        "ALL": 0,
+        "SUBMITTED": 0,
+        "UNDER_REVIEW": 0,
+        "ON_HOLD": 0,
+        "APPROVED": 0,
+        "REJECTED": 0,
+        "DISPATCHED": 0,
+    }
+    for st, c in status_counts_rows:
+        if st in counts:
+            counts[st] = c
+        counts["ALL"] += c
+
+    query = select(Order)
+    count_filtered_query = select(func.count()).select_from(Order)
+
+    if status_filter and status_filter.upper() != "ALL":
+        target_status = status_filter.upper()
+        query = query.where(Order.status == target_status)
+        count_filtered_query = count_filtered_query.where(Order.status == target_status)
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        matching_retailer_ids = select(Retailer.id).where(
+            or_(
+                Retailer.shop_name.ilike(term),
+                Retailer.retailer_code.ilike(term),
+                Retailer.owner_name.ilike(term),
+                Retailer.phone.ilike(term),
+            )
+        )
+        search_condition = or_(
+            Order.order_number.ilike(term),
+            Order.retailer_id.in_(matching_retailer_ids),
+        )
+        query = query.where(search_condition)
+        count_filtered_query = count_filtered_query.where(search_condition)
+
+    total = db.scalar(count_filtered_query) or 0
+    orders = db.scalars(
+        query.order_by(Order.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+
+    if not orders:
+        return {
+            "items": [],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "counts": counts,
+        }
+
+    order_ids = [order.id for order in orders]
+    order_items = db.scalars(
+        select(OrderItem)
+        .where(OrderItem.order_id.in_(order_ids))
+        .order_by(OrderItem.created_at.asc())
+    ).all()
+
+    retailer_ids = list({order.retailer_id for order in orders})
+    retailers = db.scalars(
+        select(Retailer).where(Retailer.id.in_(retailer_ids))
+    ).all()
+    retailers_by_id = {r.id: r for r in retailers}
+
+    credit_accounts = db.scalars(
+        select(CreditAccount).where(CreditAccount.retailer_id.in_(retailer_ids))
+    ).all()
+    credit_by_retailer = {c.retailer_id: c for c in credit_accounts}
+
+    items_by_order: dict = {}
+    for order_item in order_items:
+        items_by_order.setdefault(order_item.order_id, []).append(
+            {
+                "product_id": order_item.product_id,
+                "product_name": order_item.product_name,
+                "sku": order_item.sku,
+                "quantity": float(order_item.quantity),
+                "quantity_unit": order_item.quantity_unit,
+                "free_quantity": float(order_item.free_quantity),
+                "unit_price": float(order_item.unit_price),
+                "discount_amount": float(order_item.discount_amount),
+                "tax_amount": float(order_item.tax_amount),
+                "line_total": float(order_item.line_total),
+            }
+        )
+
+    return {
+        "items": [
+            {
+                "id": order.id,
+                "order_number": order.order_number,
+                "retailer_id": order.retailer_id,
+                "shop_name": (
+                    retailers_by_id[order.retailer_id].shop_name
+                    if order.retailer_id in retailers_by_id
+                    else None
+                ),
+                "retailer_code": (
+                    retailers_by_id[order.retailer_id].retailer_code
+                    if order.retailer_id in retailers_by_id
+                    else None
+                ),
+                "retailer_phone": (
+                    retailers_by_id[order.retailer_id].phone
+                    if order.retailer_id in retailers_by_id
+                    else None
+                ),
+                "retailer_city": (
+                    retailers_by_id[order.retailer_id].city
+                    if order.retailer_id in retailers_by_id
+                    else None
+                ),
+                "status": order.status,
+                "source": order.source,
+                "subtotal": float(order.subtotal),
+                "discount_amount": float(order.discount_amount),
+                "tax_amount": float(order.tax_amount),
+                "total_amount": float(order.total_amount),
+                "customer_note": order.customer_note,
+                "desk_note": order.desk_note,
+                "items_count": len(items_by_order.get(order.id, [])),
+                "created_at": order.created_at,
+                "submitted_at": order.submitted_at,
+                "approved_at": order.approved_at,
+                "lines": items_by_order.get(order.id, []),
+                "credit": {
+                    "credit_limit": float(credit_by_retailer[order.retailer_id].credit_limit),
+                    "current_outstanding": float(credit_by_retailer[order.retailer_id].current_outstanding),
+                    "available_credit": float(
+                        max(0, credit_by_retailer[order.retailer_id].credit_limit - credit_by_retailer[order.retailer_id].current_outstanding)
+                    ),
+                } if order.retailer_id in credit_by_retailer else None,
+            }
+            for order in orders
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "counts": counts,
+    }
+
+
 @router.get("/desk/pending")
 def get_pending_orders(
     limit: int = 20,
@@ -383,6 +544,29 @@ def get_desk_order_detail(
     detail_prods = db.scalars(select(Product).where(Product.id.in_(item_prod_ids))).all() if item_prod_ids else []
     detail_upc_map = {p.id: p.units_per_case for p in detail_prods}
 
+    warehouse = db.scalar(
+        select(Warehouse)
+        .where(Warehouse.is_active.is_(True))
+        .order_by(Warehouse.created_at.asc())
+    )
+
+    inv_map = {}
+    if warehouse and item_prod_ids:
+        inv_records = db.scalars(
+            select(Inventory).where(
+                Inventory.warehouse_id == warehouse.id,
+                Inventory.product_id.in_(item_prod_ids),
+            )
+        ).all()
+        for inv in inv_records:
+            inv_map[inv.product_id] = {
+                "quantity_on_hand": float(inv.quantity_on_hand),
+                "quantity_reserved": float(inv.quantity_reserved),
+                "available_stock": float(
+                    max(0, inv.quantity_on_hand - inv.quantity_reserved)
+                ),
+            }
+
     history_entries = db.scalars(
         select(OrderStatusHistory)
         .where(OrderStatusHistory.order_id == order.id)
@@ -401,6 +585,7 @@ def get_desk_order_detail(
             "tax_amount": float(order.tax_amount),
             "total_amount": float(order.total_amount),
             "customer_note": order.customer_note,
+            "desk_note": order.desk_note,
             "created_at": order.created_at,
             "submitted_at": order.submitted_at,
             "approved_at": order.approved_at,
@@ -427,21 +612,30 @@ def get_desk_order_detail(
             ),
             "payment_terms_days": credit.payment_terms_days,
         } if credit else None,
+        "warehouse": {
+            "id": warehouse.id,
+            "code": warehouse.code,
+            "name": warehouse.name,
+            "city": warehouse.city,
+        } if warehouse else None,
         "items": [
             {
                 "id": item.id,
                 "product_id": item.product_id,
                 "product_name": item.product_name,
                 "sku": item.sku,
-                "quantity": item.quantity,
+                "quantity": float(item.quantity),
                 "quantity_unit": item.quantity_unit,
                 "units_per_case": detail_upc_map.get(item.product_id, 1),
                 "case_price": float(item.unit_price) * detail_upc_map.get(item.product_id, 1),
-                "free_quantity": item.free_quantity,
+                "free_quantity": float(item.free_quantity),
                 "unit_price": float(item.unit_price),
                 "discount_amount": float(item.discount_amount),
                 "tax_amount": float(item.tax_amount),
                 "line_total": float(item.line_total),
+                "stock_on_hand": inv_map.get(item.product_id, {}).get("quantity_on_hand", 0.0),
+                "stock_reserved": inv_map.get(item.product_id, {}).get("quantity_reserved", 0.0),
+                "available_stock": inv_map.get(item.product_id, {}).get("available_stock", 0.0),
             }
             for item in order_items
         ],
@@ -556,12 +750,12 @@ def approve_order(
                 "message": "Order is already approved.",
             }
 
-        if order.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+        if order.status not in {"SUBMITTED", "UNDER_REVIEW", "ON_HOLD"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     f"Cannot approve order with status '{order.status}'. "
-                    "Only SUBMITTED or UNDER_REVIEW orders can be approved."
+                    "Only SUBMITTED, UNDER_REVIEW, or ON_HOLD orders can be approved."
                 ),
             )
 
@@ -760,12 +954,12 @@ def reject_order(
                 "message": "Order is already rejected.",
             }
 
-        if order.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+        if order.status not in {"SUBMITTED", "UNDER_REVIEW", "ON_HOLD"}:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     f"Cannot reject order with status '{order.status}'. "
-                    "Only SUBMITTED or UNDER_REVIEW orders can be rejected."
+                    "Only SUBMITTED, UNDER_REVIEW, or ON_HOLD orders can be rejected."
                 ),
             )
 
@@ -794,6 +988,129 @@ def reject_order(
             "message": "Order has been rejected.",
         }
 
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/desk/{order_id}/hold")
+def hold_order(
+    order_id: UUID,
+    request: OrderHoldRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("ORDER_DESK", "DISTRIBUTOR_ADMIN")
+    ),
+):
+    try:
+        order = db.scalar(
+            select(Order)
+            .where(Order.id == order_id)
+            .with_for_update()
+        )
+        if order is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found.",
+            )
+
+        if order.status == "ON_HOLD":
+            return {
+                "id": order.id,
+                "order_number": order.order_number,
+                "status": order.status,
+                "message": "Order is already on hold.",
+            }
+
+        if order.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot put order with status '{order.status}' on hold. "
+                    "Only SUBMITTED or UNDER_REVIEW orders can be placed on hold."
+                ),
+            )
+
+        previous_status = order.status
+        order.status = "ON_HOLD"
+        order.desk_note = request.reason
+
+        db.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                previous_status=previous_status,
+                new_status="ON_HOLD",
+                changed_by=current_user.id,
+                note=f"Order placed on hold by Order Desk. Reason: {request.reason}",
+            )
+        )
+
+        db.commit()
+        db.refresh(order)
+
+        return {
+            "id": order.id,
+            "order_number": order.order_number,
+            "status": order.status,
+            "hold_reason": request.reason,
+            "message": "Order has been placed on hold.",
+        }
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/desk/{order_id}/release-hold")
+def release_order_hold(
+    order_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("ORDER_DESK", "DISTRIBUTOR_ADMIN")
+    ),
+):
+    try:
+        order = db.scalar(
+            select(Order)
+            .where(Order.id == order_id)
+            .with_for_update()
+        )
+        if order is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found.",
+            )
+
+        if order.status != "ON_HOLD":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot release hold on order with status '{order.status}'. "
+                    "Only ON_HOLD orders can be released."
+                ),
+            )
+
+        previous_status = order.status
+        order.status = "UNDER_REVIEW"
+
+        db.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                previous_status=previous_status,
+                new_status="UNDER_REVIEW",
+                changed_by=current_user.id,
+                note="Order released from hold by Order Desk and returned to review.",
+            )
+        )
+
+        db.commit()
+        db.refresh(order)
+
+        return {
+            "id": order.id,
+            "order_number": order.order_number,
+            "status": order.status,
+            "message": "Order released from hold and is now under review.",
+        }
     except Exception:
         db.rollback()
         raise

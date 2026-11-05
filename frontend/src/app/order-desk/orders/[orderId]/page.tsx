@@ -76,6 +76,9 @@ interface OrderItemData {
   discount_amount: number;
   tax_amount: number;
   line_total: number;
+  stock_on_hand?: number;
+  stock_reserved?: number;
+  available_stock?: number;
 }
 
 interface OrderHistoryData {
@@ -149,6 +152,9 @@ function OrderDetailContent() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdReason, setHoldReason] = useState("");
+
   // 1. Authenticate user and verify staff role
   useEffect(() => {
     if (authLoading) return;
@@ -212,7 +218,7 @@ function OrderDetailContent() {
     try {
       setActionBusy(true);
       setActionError(null);
-      await apiRequest(`/orders/${data.order.id}/start-review`, {
+      await apiRequest(`/orders/desk/${data.order.id}/start-review`, {
         method: "POST",
       });
       setActionMessage("Order status updated to UNDER_REVIEW");
@@ -231,10 +237,10 @@ function OrderDetailContent() {
     try {
       setActionBusy(true);
       setActionError(null);
-      await apiRequest(`/orders/${data.order.id}/approve`, {
+      await apiRequest(`/orders/desk/${data.order.id}/approve`, {
         method: "POST",
         body: JSON.stringify({
-          note: approveNote.trim() || undefined,
+          desk_note: approveNote.trim() || undefined,
         }),
       });
       setShowApproveModal(false);
@@ -254,7 +260,7 @@ function OrderDetailContent() {
     try {
       setActionBusy(true);
       setActionError(null);
-      await apiRequest(`/orders/${data.order.id}/reject`, {
+      await apiRequest(`/orders/desk/${data.order.id}/reject`, {
         method: "POST",
         body: JSON.stringify({
           reason: rejectReason.trim(),
@@ -266,6 +272,48 @@ function OrderDetailContent() {
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : "Rejection failed."
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleHoldOrder = async () => {
+    if (!data?.order) return;
+    try {
+      setActionBusy(true);
+      setActionError(null);
+      await apiRequest(`/orders/desk/${data.order.id}/hold`, {
+        method: "POST",
+        body: JSON.stringify({
+          reason: holdReason.trim(),
+        }),
+      });
+      setShowHoldModal(false);
+      setActionMessage("Order placed on hold.");
+      await loadOrderDetail();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to place on hold."
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleReleaseHold = async () => {
+    if (!data?.order) return;
+    try {
+      setActionBusy(true);
+      setActionError(null);
+      await apiRequest(`/orders/desk/${data.order.id}/release-hold`, {
+        method: "POST",
+      });
+      setActionMessage("Order released from hold and is now under review.");
+      await loadOrderDetail();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to release hold."
       );
     } finally {
       setActionBusy(false);
@@ -349,6 +397,8 @@ function OrderDetailContent() {
                   ? "warning"
                   : order.status === "UNDER_REVIEW"
                   ? "info"
+                  : order.status === "ON_HOLD"
+                  ? "warning"
                   : order.status === "REJECTED"
                   ? "danger"
                   : "default"
@@ -357,7 +407,7 @@ function OrderDetailContent() {
               {order.status.replace("_", " ")}
             </Badge>
 
-            {(order.status === "SUBMITTED" || order.status === "UNDER_REVIEW") && (
+            {(order.status === "SUBMITTED" || order.status === "UNDER_REVIEW" || order.status === "ON_HOLD") && (
               <div className="flex items-center gap-2 ml-2">
                 {order.status === "SUBMITTED" && (
                   <button
@@ -367,6 +417,28 @@ function OrderDetailContent() {
                     className="rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition-colors"
                   >
                     Start Review
+                  </button>
+                )}
+                {order.status === "ON_HOLD" ? (
+                  <button
+                    type="button"
+                    onClick={handleReleaseHold}
+                    disabled={actionBusy}
+                    className="rounded-[4px] border border-[#EED7B3] bg-[#FCF6EC] px-3 py-1.5 text-xs font-bold text-[#7A4E12] hover:bg-[#F9EED9] transition-colors"
+                  >
+                    Release Hold
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionError(null);
+                      setShowHoldModal(true);
+                    }}
+                    disabled={actionBusy}
+                    className="rounded-[4px] border border-[#EED7B3] bg-white px-3 py-1.5 text-xs font-semibold text-[#7A4E12] hover:bg-[#FCF6EC] transition-colors"
+                  >
+                    Hold
                   </button>
                 )}
                 <button
@@ -408,6 +480,16 @@ function OrderDetailContent() {
           {actionError}
         </div>
       )}
+      {order.desk_note && (
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-4">
+          <div className="rounded-[4px] border border-[#EED7B3] bg-[#FCF6EC] p-3 text-xs text-[#7A4E12] flex items-start gap-2">
+            <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-semibold">Desk Note / Reason:</strong> {order.desk_note}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Review Workspace */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
@@ -433,6 +515,7 @@ function OrderDetailContent() {
                     <tr>
                       <th className="px-4 py-2.5">Product / SKU</th>
                       <th className="px-4 py-2.5 text-center">Ordered</th>
+                      <th className="px-4 py-2.5 text-center">Depot Stock</th>
                       <th className="px-4 py-2.5 text-center">Free Scheme</th>
                       <th className="px-4 py-2.5 text-right">Unit Rate</th>
                       <th className="px-4 py-2.5 text-right">Line Total</th>
@@ -455,6 +538,28 @@ function OrderDetailContent() {
                             <p className="text-[10px] text-[#666864] font-normal">
                               ({item.quantity * item.units_per_case} pcs)
                             </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {item.available_stock !== undefined ? (
+                            <div>
+                              <Badge
+                                variant={
+                                  item.available_stock >= item.quantity + item.free_quantity
+                                    ? "success"
+                                    : "danger"
+                                }
+                              >
+                                {item.available_stock} {item.quantity_unit}s avail
+                              </Badge>
+                              {item.stock_on_hand !== undefined && (
+                                <p className="text-[10px] text-[#969892] mt-0.5 tabular-nums">
+                                  {item.stock_on_hand} depot stock
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[#969892]">-</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -885,6 +990,79 @@ function OrderDetailContent() {
                 className="rounded-[4px] bg-[#8C2828] px-4 py-2 text-xs font-bold text-white hover:bg-[#681C1C] disabled:opacity-40 transition-colors shadow-2xs"
               >
                 {actionBusy ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Order Hold */}
+      {showHoldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-[6px] border border-[#EED7B3] bg-white p-6 shadow-xl">
+            <h3 className="text-base font-bold text-[#7A4E12]">
+              Place Order On Hold
+            </h3>
+            <p className="mt-1 text-xs text-[#666864]">
+              Order <strong className="font-mono text-[#242724]">{order.order_number}</strong> will be moved to <strong className="text-[#7A4E12]">ON_HOLD</strong> status.
+            </p>
+
+            <div className="mt-4">
+              <label className="block text-xs font-semibold text-[#242724]">
+                Reason for Hold (Mandatory)
+              </label>
+              <textarea
+                rows={3}
+                value={holdReason}
+                onChange={(e) => setHoldReason(e.target.value)}
+                placeholder="Specify reason (e.g. Credit limit breach, waiting for warehouse delivery, shop address unconfirmed)"
+                className="mt-1.5 w-full rounded-[4px] border border-[#E7E6E0] p-2.5 text-xs text-[#242724] focus:border-[#7A4E12] focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {[
+                "Credit limit breached — awaiting payment",
+                "Depot stock low — expecting truck delivery",
+                "Price or scheme confirmation needed",
+                "Kirana address verification pending",
+              ].map((quickReason) => (
+                <button
+                  key={quickReason}
+                  type="button"
+                  onClick={() => setHoldReason(quickReason)}
+                  className="rounded-[3px] border border-[#E7E6E0] bg-[#FAF9F6] px-2 py-1 text-[11px] text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724]"
+                >
+                  {quickReason}
+                </button>
+              ))}
+            </div>
+
+            {actionError && (
+              <p className="mt-3 text-xs font-semibold text-[#8C2828]">
+                {actionError}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHoldModal(false);
+                  setActionError(null);
+                }}
+                disabled={actionBusy}
+                className="rounded-[4px] border border-[#E7E6E0] bg-white px-4 py-2 text-xs font-semibold text-[#666864] hover:bg-[#F0EFEA]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleHoldOrder}
+                disabled={actionBusy || holdReason.trim().length < 3}
+                className="rounded-[4px] bg-[#7A4E12] px-4 py-2 text-xs font-bold text-white hover:bg-[#5C3A0D] disabled:opacity-40 transition-colors shadow-2xs"
+              >
+                {actionBusy ? "Saving..." : "Confirm Hold"}
               </button>
             </div>
           </div>
