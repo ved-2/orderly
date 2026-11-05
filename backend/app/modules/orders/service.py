@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.modules.orders.models import (
@@ -9,7 +9,7 @@ from app.modules.orders.models import (
     OrderItem,
     OrderStatusHistory,
 )
-from app.modules.orders.schemas import OrderCreate
+from app.modules.orders.schemas import OrderCreate, OrderItemCreate
 from app.modules.orders.calculation_service import calculate_order_line
 from app.modules.pricing.service import get_retailer_product_price
 from app.modules.schemes.service import get_eligible_scheme_rules
@@ -177,6 +177,132 @@ def create_order_draft(
         db.commit()
         db.refresh(order)
 
+        return order
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_order_items(
+    db: Session,
+    order: Order,
+    items: list[OrderItemCreate],
+    modified_by: UUID,
+) -> Order:
+    """
+    Re-price, re-scheme, and replace line items for an order under review.
+    All calculations are authoritative and validated on the backend.
+    """
+    if order.status not in {"SUBMITTED", "UNDER_REVIEW"}:
+        raise ValueError(
+            f"Cannot modify items on order with status '{order.status}'. "
+            "Only SUBMITTED or UNDER_REVIEW orders can be edited."
+        )
+
+    if not items:
+        raise ValueError("An order must contain at least one item.")
+
+    current_time = datetime.now(timezone.utc)
+
+    try:
+        # 1. Remove existing items
+        db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+
+        subtotal = 0
+        total_discount = 0
+        total_tax = 0
+        total_amount = 0
+
+        # 2. Recalculate every requested line using trusted pricing & schemes
+        for requested_item in items:
+            product, price_record = get_retailer_product_price(
+                db=db,
+                retailer_id=order.retailer_id,
+                product_id=requested_item.product_id,
+                at=current_time,
+            )
+
+            if product.gst_rate is None:
+                raise ValueError(
+                    f"GST rate is not configured for SKU {product.sku}."
+                )
+
+            eligible_rows = get_eligible_scheme_rules(
+                db=db,
+                retailer_id=order.retailer_id,
+                product_id=product.id,
+                quantity_unit=requested_item.quantity_unit,
+                at=current_time,
+            )
+
+            scheme_groups = {}
+            for scheme, rule in eligible_rows:
+                scheme_groups.setdefault(scheme.id, (scheme, []))[1].append(rule)
+
+            if len(scheme_groups) > 1:
+                raise ValueError(
+                    f"Multiple schemes apply to SKU {product.sku}. "
+                    "Manual scheme selection is required."
+                )
+
+            selected_scheme = None
+            selected_rules = []
+            if scheme_groups:
+                selected_scheme, selected_rules = next(iter(scheme_groups.values()))
+
+            calculated = calculate_order_line(
+                product=product,
+                price_record=price_record,
+                quantity=requested_item.quantity,
+                quantity_unit=requested_item.quantity_unit,
+                scheme=selected_scheme,
+                scheme_rules=selected_rules,
+            )
+
+            order_item = OrderItem(
+                order_id=order.id,
+                product_id=product.id,
+                scheme_id=calculated.scheme_id,
+                product_name=product.name,
+                sku=product.sku,
+                quantity=calculated.quantity,
+                quantity_unit=calculated.quantity_unit,
+                free_quantity=calculated.free_quantity,
+                unit_price=price_record.price,
+                discount_amount=calculated.discount_amount,
+                tax_amount=calculated.tax_amount,
+                line_total=calculated.total_amount,
+            )
+            db.add(order_item)
+
+            subtotal += calculated.subtotal
+            total_discount += calculated.discount_amount
+            total_tax += calculated.tax_amount
+            total_amount += calculated.total_amount
+
+        # 3. Update order financial totals
+        order.subtotal = subtotal
+        order.discount_amount = total_discount
+        order.tax_amount = total_tax
+        order.total_amount = total_amount
+
+        # 4. Audit history record
+        db.add(
+            OrderStatusHistory(
+                order_id=order.id,
+                previous_status=order.status,
+                new_status=order.status,
+                changed_by=modified_by,
+                note=(
+                    f"Order line items modified by Order Desk ({len(items)} items). "
+                    f"New total: Rs {total_amount:.2f}"
+                ),
+            )
+        )
+
+        db.commit()
+        db.refresh(order)
         return order
 
     except Exception:

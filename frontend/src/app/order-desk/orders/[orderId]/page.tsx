@@ -17,6 +17,12 @@ import {
   FileText,
   User,
   Truck,
+  Pencil,
+  Trash2,
+  Plus,
+  Save,
+  X,
+  Search,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -154,6 +160,36 @@ function OrderDetailContent() {
 
   const [showHoldModal, setShowHoldModal] = useState(false);
   const [holdReason, setHoldReason] = useState("");
+
+  // Line item editing state
+  const [isEditingLines, setIsEditingLines] = useState(false);
+  const [draftLines, setDraftLines] = useState<
+    {
+      product_id: string;
+      product_name: string;
+      sku: string;
+      quantity: number;
+      quantity_unit: "CASE" | "PIECE";
+      unit_price: number;
+      available_stock?: number;
+      units_per_case?: number;
+    }[]
+  >([]);
+
+  // Add Product picker state
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
+  const [availableProducts, setAvailableProducts] = useState<
+    {
+      id: string;
+      sku: string;
+      name: string;
+      units_per_case: number;
+      price: number;
+      stock_on_hand: number;
+    }[]
+  >([]);
+  const [searchingProducts, setSearchingProducts] = useState(false);
 
   // 1. Authenticate user and verify staff role
   useEffect(() => {
@@ -318,6 +354,131 @@ function OrderDetailContent() {
     } finally {
       setActionBusy(false);
     }
+  };
+
+  // Line item editing handlers
+  const handleEnterEditMode = () => {
+    if (!data?.items) return;
+    setDraftLines(
+      data.items.map((i) => ({
+        product_id: i.product_id,
+        product_name: i.product_name,
+        sku: i.sku,
+        quantity: i.quantity,
+        quantity_unit: i.quantity_unit as "CASE" | "PIECE",
+        unit_price: i.unit_price,
+        available_stock: i.available_stock,
+        units_per_case: i.units_per_case,
+      }))
+    );
+    setIsEditingLines(true);
+    setActionError(null);
+  };
+
+  const handleUpdateDraftQuantity = (idx: number, qty: number) => {
+    setDraftLines((prev) =>
+      prev.map((l, i) => (i === idx ? { ...l, quantity: qty } : l))
+    );
+  };
+
+  const handleUpdateDraftUnit = (idx: number, unit: "CASE" | "PIECE") => {
+    setDraftLines((prev) =>
+      prev.map((l, i) => (i === idx ? { ...l, quantity_unit: unit } : l))
+    );
+  };
+
+  const handleRemoveDraftLine = (idx: number) => {
+    setDraftLines((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSaveLineChanges = async () => {
+    if (!data?.order) return;
+    if (draftLines.length === 0) {
+      setActionError("An order must contain at least one line item.");
+      return;
+    }
+    for (const l of draftLines) {
+      if (l.quantity <= 0 || isNaN(l.quantity)) {
+        setActionError(`Quantity for "${l.product_name}" must be greater than zero.`);
+        return;
+      }
+    }
+
+    try {
+      setActionBusy(true);
+      setActionError(null);
+      const res = await apiRequest<OrderDetailResponse>(
+        `/orders/desk/${data.order.id}/items`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            items: draftLines.map((l) => ({
+              product_id: l.product_id,
+              quantity: l.quantity,
+              quantity_unit: l.quantity_unit,
+            })),
+          }),
+        }
+      );
+      setData(res);
+      setIsEditingLines(false);
+      setActionMessage("Line items successfully recalculated and saved.");
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to save line item changes."
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const searchCatalogueProducts = useCallback(async (query: string) => {
+    try {
+      setSearchingProducts(true);
+      const res = await apiRequest<{ items: any[] }>(
+        `/distributor/products?status=ACTIVE&search=${encodeURIComponent(query)}`
+      );
+      setAvailableProducts(
+        (res.items || []).map((p) => ({
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          units_per_case: p.units_per_case,
+          price: p.price,
+          stock_on_hand: p.stock_on_hand || 0,
+        }))
+      );
+    } catch {
+      // Non-blocking
+    } finally {
+      setSearchingProducts(false);
+    }
+  }, []);
+
+  const handleAddProductToDraft = (prod: any) => {
+    const exists = draftLines.find((l) => l.product_id === prod.id);
+    if (exists) {
+      setDraftLines((prev) =>
+        prev.map((l) =>
+          l.product_id === prod.id ? { ...l, quantity: l.quantity + 1 } : l
+        )
+      );
+    } else {
+      setDraftLines((prev) => [
+        ...prev,
+        {
+          product_id: prod.id,
+          product_name: prod.name,
+          sku: prod.sku,
+          quantity: 1,
+          quantity_unit: "CASE",
+          unit_price: prod.price,
+          available_stock: prod.stock_on_hand,
+          units_per_case: prod.units_per_case,
+        },
+      ]);
+    }
+    setShowAddProductModal(false);
   };
 
   if (authLoading || profileLoading || loading) {
@@ -498,103 +659,254 @@ function OrderDetailContent() {
           <div className="space-y-6 lg:col-span-2">
             {/* Ordered Items Table */}
             <div className="rounded-[6px] border border-[#E7E6E0] bg-white shadow-2xs overflow-hidden">
-              <div className="border-b border-[#E7E6E0] bg-[#FAF9F6] px-4 sm:px-6 py-3.5 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-bold text-[#242724]">
-                    Order Items Breakdown ({items.length})
-                  </h2>
-                  <p className="mt-0.5 text-[11px] text-[#666864]">
-                    Source: <strong className="text-[#242724]">{order.source}</strong> · Placed {formatDate(order.created_at)}
-                  </p>
+              {isEditingLines ? (
+                <div className="border-b border-[#E7E6E0] bg-[#FCF6EC] px-4 sm:px-6 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Pencil size={15} className="text-[#7A4E12]" />
+                    <div>
+                      <h2 className="text-sm font-bold text-[#7A4E12]">
+                        Editing Order Line Items ({draftLines.length})
+                      </h2>
+                      <p className="text-[11px] text-[#666864]">
+                        Adjust quantities, toggle units, or add/remove products. Pricing & schemes will be recalculated.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingLines(false);
+                        setActionError(null);
+                      }}
+                      disabled={actionBusy}
+                      className="rounded-[4px] border border-[#E7E6E0] bg-white px-2.5 py-1 text-xs font-semibold text-[#666864] hover:bg-[#F0EFEA]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveLineChanges}
+                      disabled={actionBusy}
+                      className="inline-flex items-center gap-1 rounded-[4px] bg-[#79565D] px-3.5 py-1 text-xs font-bold text-white hover:bg-[#67474E] shadow-2xs disabled:opacity-50 transition-colors"
+                    >
+                      <Save size={12} />
+                      <span>{actionBusy ? "Recalculating..." : "Save Changes"}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="border-b border-[#E7E6E0] bg-[#FAF9F6] px-4 sm:px-6 py-3.5 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-bold text-[#242724]">
+                      Order Items Breakdown ({items.length})
+                    </h2>
+                    <p className="mt-0.5 text-[11px] text-[#666864]">
+                      Source: <strong className="text-[#242724]">{order.source}</strong> · Placed {formatDate(order.created_at)}
+                    </p>
+                  </div>
+                  {(order.status === "SUBMITTED" || order.status === "UNDER_REVIEW") && (
+                    <button
+                      type="button"
+                      onClick={handleEnterEditMode}
+                      className="inline-flex items-center gap-1 rounded-[4px] border border-[#E7E6E0] bg-white px-2.5 py-1 text-xs font-semibold text-[#242724] hover:border-[#79565D] hover:text-[#79565D] transition-colors"
+                    >
+                      <Pencil size={12} />
+                      <span>Edit Line Items</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-[#E7E6E0] bg-[#FAF9F6] text-[10px] font-bold uppercase tracking-wider text-[#969892]">
-                    <tr>
-                      <th className="px-4 py-2.5">Product / SKU</th>
-                      <th className="px-4 py-2.5 text-center">Ordered</th>
-                      <th className="px-4 py-2.5 text-center">Depot Stock</th>
-                      <th className="px-4 py-2.5 text-center">Free Scheme</th>
-                      <th className="px-4 py-2.5 text-right">Unit Rate</th>
-                      <th className="px-4 py-2.5 text-right">Line Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#F0EFEA]">
-                    {items.map((item) => (
-                      <tr key={item.id} className="hover:bg-[#FBFBFA]">
-                        <td className="px-4 py-3">
-                          <p className="font-bold text-[#242724]">
-                            {item.product_name}
-                          </p>
-                          <p className="font-mono text-[11px] text-[#969892]">
-                            SKU: {item.sku}
-                          </p>
-                        </td>
-                        <td className="px-4 py-3 text-center font-mono font-bold text-[#242724]">
-                          <p>{item.quantity} {item.quantity_unit}</p>
-                          {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 && (
-                            <p className="text-[10px] text-[#666864] font-normal">
-                              ({item.quantity * item.units_per_case} pcs)
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {item.available_stock !== undefined ? (
-                            <div>
+              {isEditingLines ? (
+                /* Editable Lines Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-[#E7E6E0] bg-[#FAF9F6] text-[10px] font-bold uppercase tracking-wider text-[#969892]">
+                      <tr>
+                        <th className="px-4 py-2.5">Product / SKU</th>
+                        <th className="px-4 py-2.5 text-center w-28">Quantity</th>
+                        <th className="px-4 py-2.5 text-center w-28">Unit</th>
+                        <th className="px-4 py-2.5 text-center">Depot Stock</th>
+                        <th className="px-4 py-2.5 text-right w-16">Remove</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#F0EFEA]">
+                      {draftLines.map((line, idx) => (
+                        <tr key={`${line.product_id}-${idx}`} className="hover:bg-[#FBFBFA]">
+                          <td className="px-4 py-3">
+                            <p className="font-bold text-[#242724]">{line.product_name}</p>
+                            <p className="font-mono text-[11px] text-[#969892]">SKU: {line.sku}</p>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={line.quantity}
+                              onChange={(e) =>
+                                handleUpdateDraftQuantity(idx, parseFloat(e.target.value) || 0)
+                              }
+                              className="w-20 text-center rounded-[3px] border border-[#E7E6E0] py-1 text-xs font-mono font-bold text-[#242724] focus:border-[#79565D] focus:outline-none tabular-nums"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex rounded-[3px] border border-[#E7E6E0] p-0.5 bg-[#FAF9F6]">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateDraftUnit(idx, "CASE")}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-[2px] transition-colors ${
+                                  line.quantity_unit === "CASE"
+                                    ? "bg-[#242724] text-white"
+                                    : "text-[#666864] hover:text-[#242724]"
+                                }`}
+                              >
+                                CASE
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateDraftUnit(idx, "PIECE")}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-[2px] transition-colors ${
+                                  line.quantity_unit === "PIECE"
+                                    ? "bg-[#242724] text-white"
+                                    : "text-[#666864] hover:text-[#242724]"
+                                }`}
+                              >
+                                PIECE
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {line.available_stock !== undefined ? (
                               <Badge
                                 variant={
-                                  item.available_stock >= item.quantity + item.free_quantity
-                                    ? "success"
-                                    : "danger"
+                                  line.available_stock >= line.quantity ? "success" : "danger"
                                 }
                               >
-                                {item.available_stock} {item.quantity_unit}s avail
+                                {line.available_stock} {line.quantity_unit}s avail
                               </Badge>
-                              {item.stock_on_hand !== undefined && (
-                                <p className="text-[10px] text-[#969892] mt-0.5 tabular-nums">
-                                  {item.stock_on_hand} depot stock
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[#969892]">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {item.free_quantity > 0 ? (
-                            <Badge variant="success">
-                              +{item.free_quantity} {item.quantity_unit} bonus
-                            </Badge>
-                          ) : (
-                            <span className="text-[#969892]">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">
-                          {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 ? (
-                            <div>
-                              <p className="font-bold text-[#242724] tabular-nums">
-                                {formatCurrency(item.unit_price * item.units_per_case)} / cs
-                              </p>
-                              <p className="text-[10px] text-[#969892] font-normal tabular-nums">
-                                ({formatCurrency(item.unit_price)} / pc · {item.units_per_case} pcs/cs)
-                              </p>
-                            </div>
-                          ) : (
-                            <p className="text-[#242724] tabular-nums">
-                              {formatCurrency(item.unit_price)} / pc
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[#242724] tabular-nums">
-                          {formatCurrency(item.line_total)}
-                        </td>
+                            ) : (
+                              <span className="text-[#969892]">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDraftLine(idx)}
+                              title="Remove item"
+                              className="p-1 text-[#969892] hover:text-[#8C2828] hover:bg-[#FBF0F0] rounded-[3px] transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Add Product Line Button */}
+                  <div className="p-3 border-t border-[#E7E6E0] bg-[#FAF9F6] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddProductModal(true);
+                        searchCatalogueProducts("");
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#242724] hover:border-[#79565D] hover:text-[#79565D] transition-colors"
+                    >
+                      <Plus size={13} />
+                      <span>Add Product SKU</span>
+                    </button>
+                    <span className="text-[11px] text-[#969892]">
+                      Prices, trade schemes, and GST will be recalculated by the backend on save.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* Read-Only Review Table */
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-[#E7E6E0] bg-[#FAF9F6] text-[10px] font-bold uppercase tracking-wider text-[#969892]">
+                      <tr>
+                        <th className="px-4 py-2.5">Product / SKU</th>
+                        <th className="px-4 py-2.5 text-center">Ordered</th>
+                        <th className="px-4 py-2.5 text-center">Depot Stock</th>
+                        <th className="px-4 py-2.5 text-center">Free Scheme</th>
+                        <th className="px-4 py-2.5 text-right">Unit Rate</th>
+                        <th className="px-4 py-2.5 text-right">Line Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#F0EFEA]">
+                      {items.map((item) => (
+                        <tr key={item.id} className="hover:bg-[#FBFBFA]">
+                          <td className="px-4 py-3">
+                            <p className="font-bold text-[#242724]">{item.product_name}</p>
+                            <p className="font-mono text-[11px] text-[#969892]">SKU: {item.sku}</p>
+                          </td>
+                          <td className="px-4 py-3 text-center font-mono font-bold text-[#242724]">
+                            <p>{item.quantity} {item.quantity_unit}</p>
+                            {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 && (
+                              <p className="text-[10px] text-[#666864] font-normal">
+                                ({item.quantity * item.units_per_case} pcs)
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {item.available_stock !== undefined ? (
+                              <div>
+                                <Badge
+                                  variant={
+                                    item.available_stock >= item.quantity + item.free_quantity
+                                      ? "success"
+                                      : "danger"
+                                  }
+                                >
+                                  {item.available_stock} {item.quantity_unit}s avail
+                                </Badge>
+                                {item.stock_on_hand !== undefined && (
+                                  <p className="text-[10px] text-[#969892] mt-0.5 tabular-nums">
+                                    {item.stock_on_hand} depot stock
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[#969892]">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {item.free_quantity > 0 ? (
+                              <Badge variant="success">
+                                +{item.free_quantity} {item.quantity_unit} bonus
+                              </Badge>
+                            ) : (
+                              <span className="text-[#969892]">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono">
+                            {item.quantity_unit === "CASE" && item.units_per_case && item.units_per_case > 1 ? (
+                              <div>
+                                <p className="font-bold text-[#242724] tabular-nums">
+                                  {formatCurrency(item.unit_price * item.units_per_case)} / cs
+                                </p>
+                                <p className="text-[10px] text-[#969892] font-normal tabular-nums">
+                                  ({formatCurrency(item.unit_price)} / pc · {item.units_per_case} pcs/cs)
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-[#242724] tabular-nums">
+                                {formatCurrency(item.unit_price)} / pc
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-[#242724] tabular-nums">
+                            {formatCurrency(item.line_total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {/* Financial Summary */}
               <div className="border-t border-[#E7E6E0] bg-[#FAF9F6] px-4 sm:px-6 py-4">
@@ -1063,6 +1375,103 @@ function OrderDetailContent() {
                 className="rounded-[4px] bg-[#7A4E12] px-4 py-2 text-xs font-bold text-white hover:bg-[#5C3A0D] disabled:opacity-40 transition-colors shadow-2xs"
               >
                 {actionBusy ? "Saving..." : "Confirm Hold"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Product to Order */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-xl rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E7E6E0]">
+              <div>
+                <h3 className="text-sm font-bold text-[#242724]">
+                  Add Product SKU to Order
+                </h3>
+                <p className="text-[11px] text-[#666864] mt-0.5">
+                  Select an active catalogue SKU to add to this order review draft.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddProductModal(false)}
+                className="p-1 text-[#969892] hover:text-[#242724] rounded-[4px]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative mt-3">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#969892]"
+              />
+              <input
+                type="text"
+                value={productSearch}
+                onChange={(e) => {
+                  setProductSearch(e.target.value);
+                  searchCatalogueProducts(e.target.value);
+                }}
+                placeholder="Search products by SKU, title, category..."
+                className="w-full rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] pl-8 pr-3 py-1.5 text-xs text-[#242724] focus:border-[#79565D] focus:outline-none"
+              />
+            </div>
+
+            {/* Products List */}
+            <div className="mt-3 overflow-y-auto flex-1 divide-y divide-[#F0EFEA] min-h-[220px]">
+              {searchingProducts ? (
+                <div className="p-6 text-center text-xs text-[#969892]">
+                  Searching catalogue...
+                </div>
+              ) : availableProducts.length === 0 ? (
+                <div className="p-8 text-center text-xs text-[#969892]">
+                  No matching active products found in depot master.
+                </div>
+              ) : (
+                availableProducts.map((p) => (
+                  <div
+                    key={p.id}
+                    className="py-2.5 px-2 flex items-center justify-between hover:bg-[#FAF9F6] rounded-[4px] transition-colors"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <p className="text-xs font-bold text-[#242724] truncate">
+                        {p.name}
+                      </p>
+                      <p className="text-[11px] font-mono text-[#969892] mt-0.5">
+                        SKU: {p.sku} • {p.units_per_case} pcs/case • Base: {formatCurrency(p.price)}/pc
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <Badge
+                        variant={p.stock_on_hand > 0 ? "success" : "danger"}
+                      >
+                        {p.stock_on_hand} in stock
+                      </Badge>
+                      <button
+                        type="button"
+                        onClick={() => handleAddProductToDraft(p)}
+                        className="rounded-[3px] bg-[#79565D] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#67474E] transition-colors"
+                      >
+                        Add to Order
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-[#E7E6E0] flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAddProductModal(false)}
+                className="rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#666864] hover:bg-[#F0EFEA]"
+              >
+                Done
               </button>
             </div>
           </div>

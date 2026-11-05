@@ -38,3 +38,9 @@ class OrderHoldRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
     model_config = ConfigDict(extra="forbid")
+
+
+class OrderUpdateItemsRequest(BaseModel):
+    items: list[OrderItemCreate] = Field(min_length=1, max_length=100)
+
+    model_config = ConfigDict(extra="forbid")

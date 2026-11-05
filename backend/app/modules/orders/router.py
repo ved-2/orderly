@@ -29,8 +29,12 @@ from app.modules.orders.schemas import (
     OrderApproveRequest,
     OrderRejectRequest,
     OrderHoldRequest,
+    OrderUpdateItemsRequest,
 )
-from app.modules.orders.service import create_order_draft
+from app.modules.orders.service import (
+    create_order_draft,
+    update_order_items,
+)
 
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -650,6 +654,46 @@ def get_desk_order_detail(
             for h in history_entries
         ],
     }
+
+
+@router.patch("/desk/{order_id}/items")
+def update_desk_order_items(
+    order_id: UUID,
+    payload: OrderUpdateItemsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("ORDER_DESK", "DISTRIBUTOR_ADMIN")
+    ),
+):
+    try:
+        order = db.scalar(
+            select(Order)
+            .where(Order.id == order_id)
+            .with_for_update()
+        )
+        if order is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found.",
+            )
+
+        update_order_items(
+            db=db,
+            order=order,
+            items=payload.items,
+            modified_by=current_user.id,
+        )
+
+        return get_desk_order_detail(
+            order_id=order.id,
+            db=db,
+            current_user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/desk/{order_id}/start-review")
