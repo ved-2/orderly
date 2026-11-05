@@ -1,16 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Filter,
-  Inbox,
-  RefreshCw,
   Search,
+  RefreshCw,
   Store,
   Clock,
   CheckCircle2,
@@ -18,9 +13,13 @@ import {
   Receipt,
   X,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Eye,
+  ShieldAlert,
 } from "lucide-react";
 
-import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
@@ -37,39 +36,62 @@ interface OrderLineItem {
   line_total: number;
 }
 
-interface PendingOrder {
+interface OrderItem {
   id: string;
   order_number: string;
   retailer_id: string;
-  shop_name?: string | null;
-  retailer_code?: string | null;
+  shop_name: string | null;
+  retailer_code: string | null;
+  retailer_phone: string | null;
+  retailer_city: string | null;
   status: string;
+  source: string;
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
   total_amount: number;
-  customer_note?: string | null;
+  customer_note: string | null;
+  desk_note: string | null;
+  items_count: number;
   created_at: string;
   submitted_at: string | null;
+  approved_at: string | null;
   lines: OrderLineItem[];
+  credit: {
+    credit_limit: number;
+    current_outstanding: number;
+    available_credit: number;
+  } | null;
 }
 
-interface PendingOrdersResponse {
-  items: PendingOrder[];
+interface DeskStatusCounts {
+  ALL: number;
+  SUBMITTED: number;
+  UNDER_REVIEW: number;
+  ON_HOLD: number;
+  APPROVED: number;
+  REJECTED: number;
+  DISPATCHED: number;
+}
+
+interface DeskListingResponse {
+  items: OrderItem[];
   total: number;
   limit: number;
   offset: number;
+  counts: DeskStatusCounts;
 }
 
-interface UserProfile {
-  id: string;
-  email: string;
-  role: string;
-  is_active: boolean;
-}
-
-const ALLOWED_ROLES = new Set(["ORDER_DESK", "DISTRIBUTOR_ADMIN"]);
 const PAGE_SIZE = 25;
+
+const STATUS_TABS = [
+  { label: "All Orders", value: "ALL" },
+  { label: "Pending", value: "SUBMITTED" },
+  { label: "Under Review", value: "UNDER_REVIEW" },
+  { label: "Credit Holds", value: "ON_HOLD" },
+  { label: "Confirmed", value: "APPROVED" },
+  { label: "Rejected", value: "REJECTED" },
+];
 
 function formatCurrency(val: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -94,83 +116,95 @@ function formatDate(isoString: string | null): string {
   }
 }
 
-export default function PendingOrdersPage() {
+function OrdersQueueContent() {
   const router = useRouter();
-  const { user, loading: authLoading, logout } = useAuth();
+  const searchParams = useSearchParams();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  // Status filter from URL query param (e.g. ?status=ON_HOLD)
+  const initialStatus = searchParams.get("status") || "ALL";
+  const [activeTab, setActiveTab] = useState<string>(initialStatus);
 
-  const [orders, setOrders] = useState<PendingOrder[]>([]);
+  const [orders, setOrders] = useState<OrderItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [counts, setCounts] = useState<DeskStatusCounts | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Slide-over preview drawer
-  const [selectedOrder, setSelectedOrder] = useState<PendingOrder | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
 
+  // Sync tab with URL search parameter if changed externally
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      setProfileLoading(false);
-      return;
-    }
+    const paramStatus = searchParams.get("status") || "ALL";
+    setActiveTab(paramStatus);
+    setOffset(0);
+  }, [searchParams]);
 
-    let isMounted = true;
-    async function fetchProfile() {
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const loadOrders = useCallback(
+    async (isRefresh = false) => {
       try {
-        const data = await apiRequest<UserProfile>("/auth/me");
-        if (isMounted) setProfile(data);
-      } catch (err) {
-        if (isMounted) {
-          setError(
-            err instanceof Error ? err.message : "Authentication error"
-          );
+        if (isRefresh) setRefreshing(true);
+        else setLoading(true);
+        setError(null);
+
+        let url = `/orders/desk?limit=${PAGE_SIZE}&offset=${offset}`;
+        if (activeTab && activeTab !== "ALL") {
+          url += `&status=${encodeURIComponent(activeTab)}`;
         }
+        if (debouncedSearch) {
+          url += `&search=${encodeURIComponent(debouncedSearch)}`;
+        }
+
+        const res = await apiRequest<DeskListingResponse>(url);
+        setOrders(res.items || []);
+        setTotal(res.total || 0);
+        setOffset(res.offset || 0);
+        if (res.counts) setCounts(res.counts);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load orders queue from depot server."
+        );
       } finally {
-        if (isMounted) setProfileLoading(false);
+        setLoading(false);
+        setRefreshing(false);
       }
-    }
-
-    fetchProfile();
-    return () => {
-      isMounted = false;
-    };
-  }, [user, authLoading]);
-
-  const loadOrders = useCallback(async (currentOffset: number) => {
-    try {
-      setOrdersLoading(true);
-      setError(null);
-      const res = await apiRequest<PendingOrdersResponse>(
-        `/orders/desk/pending?limit=${PAGE_SIZE}&offset=${currentOffset}`
-      );
-      setOrders(res.items || []);
-      setTotal(res.total || 0);
-      setOffset(res.offset || 0);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load pending orders from server."
-      );
-    } finally {
-      setOrdersLoading(false);
-    }
-  }, []);
+    },
+    [activeTab, debouncedSearch, offset]
+  );
 
   useEffect(() => {
-    if (profile && ALLOWED_ROLES.has(profile.role)) {
-      loadOrders(offset);
+    loadOrders();
+  }, [loadOrders]);
+
+  const handleTabChange = (newStatus: string) => {
+    setActiveTab(newStatus);
+    setOffset(0);
+    if (newStatus === "ALL") {
+      router.push("/order-desk/orders");
+    } else {
+      router.push(`/order-desk/orders?status=${newStatus}`);
     }
-  }, [profile, offset, loadOrders]);
+  };
 
   const handlePrevPage = () => {
     if (offset > 0) {
-      const prev = Math.max(0, offset - PAGE_SIZE);
-      setOffset(prev);
+      setOffset(Math.max(0, offset - PAGE_SIZE));
     }
   };
 
@@ -180,231 +214,265 @@ export default function PendingOrdersPage() {
     }
   };
 
-  const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return orders;
-    const q = searchQuery.toLowerCase();
-    return orders.filter(
-      (o) =>
-        o.order_number.toLowerCase().includes(q) ||
-        (o.shop_name && o.shop_name.toLowerCase().includes(q)) ||
-        (o.retailer_code && o.retailer_code.toLowerCase().includes(q))
-    );
-  }, [orders, searchQuery]);
-
-  if (authLoading || profileLoading) {
-    return (
-      <main className="min-h-screen bg-[#F6F5F1] p-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="h-8 w-48 animate-pulse rounded bg-[#E7E6E0]" />
-          <div className="mt-6 h-96 animate-pulse rounded bg-[#E7E6E0]" />
-        </div>
-      </main>
-    );
-  }
-
-  if (!user || !profile || !ALLOWED_ROLES.has(profile.role)) {
-    return (
-      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
-        <div className="mx-auto max-w-md w-full rounded-[6px] border border-[#E7E6E0] bg-white p-6 text-center shadow-2xs">
-          <h1 className="text-base font-bold text-[#242724]">
-            Order Desk Authorization Required
-          </h1>
-          <p className="mt-1 text-xs text-[#666864]">
-            Please sign in with a verified Order Desk account.
-          </p>
-          <Link
-            href="/register"
-            className="mt-5 inline-block rounded-[4px] bg-[#79565D] px-4 py-2 text-xs font-semibold text-white"
-          >
-            Sign in
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  const startRecord = total === 0 ? 0 : offset + 1;
-  const endRecord = Math.min(offset + PAGE_SIZE, total);
+  const getTabCount = (tabValue: string) => {
+    if (!counts) return null;
+    return counts[tabValue as keyof DeskStatusCounts] ?? null;
+  };
 
   return (
-    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/order-desk"
-              className="flex items-center gap-1.5 text-xs font-semibold text-[#666864] hover:text-[#242724] transition-colors"
-            >
-              <ArrowLeft size={14} />
-              <span>Desk Hub</span>
-            </Link>
-            <span className="text-[#E7E6E0]">/</span>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-sm text-[#242724]">
-                Incoming Orders Queue
-              </h1>
-              <Badge variant="accent" className="text-[10px]">
-                {total} Awaiting
-              </Badge>
-            </div>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#E7E6E0] pb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-[#242724]">
+              Orders Queue
+            </h1>
+            <Badge variant="outline" className="text-[10px]">
+              {total} Orders Listed
+            </Badge>
           </div>
+          <p className="mt-1 text-xs text-[#666864]">
+            Search, filter, inspect, and approve retailer orders with depot inventory validation.
+          </p>
+        </div>
 
-          <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => loadOrders(true)}
+          disabled={loading || refreshing}
+          className="inline-flex items-center gap-1.5 rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition-colors shadow-2xs self-start sm:self-auto disabled:opacity-50"
+        >
+          <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+          <span>{refreshing ? "Syncing..." : "Refresh Queue"}</span>
+        </button>
+      </div>
+
+      {/* Status Filter Tabs & Search Bar */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        {/* Horizontal Status Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
+          {STATUS_TABS.map((tab) => {
+            const active = activeTab === tab.value;
+            const count = getTabCount(tab.value);
+
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => handleTabChange(tab.value)}
+                className={`flex items-center gap-1.5 rounded-[4px] px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  active
+                    ? "bg-[#242724] text-white shadow-2xs"
+                    : "border border-[#E7E6E0] bg-white text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724]"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {count !== null && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums ${
+                      active
+                        ? "bg-white text-[#242724]"
+                        : tab.value === "ON_HOLD"
+                        ? "bg-[#FBF0F0] text-[#8C2828] border border-[#EDBCBC]"
+                        : tab.value === "SUBMITTED"
+                        ? "bg-[#FCF6EC] text-[#7A4E12] border border-[#EED7B3]"
+                        : "bg-[#F0EFEA] text-[#666864]"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search Field */}
+        <div className="relative w-full md:w-72">
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-[#969892]"
+          />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search order #, shop, code, phone..."
+            className="w-full rounded-[4px] border border-[#E7E6E0] bg-white pl-8 pr-8 py-1.5 text-xs text-[#242724] placeholder:text-[#969892] focus:border-[#79565D] focus:outline-none"
+          />
+          {searchInput && (
             <button
               type="button"
-              onClick={() => loadOrders(offset)}
-              disabled={ordersLoading}
-              className="inline-flex items-center gap-1.5 rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] disabled:opacity-50 transition-colors"
+              onClick={() => setSearchInput("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#969892] hover:text-[#242724]"
             >
-              <RefreshCw
-                size={12}
-                className={ordersLoading ? "animate-spin" : ""}
-              />
-              <span>Refresh</span>
+              <X size={13} />
             </button>
-          </div>
+          )}
         </div>
-      </header>
+      </div>
 
-      {/* Main Body */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
-        {error && (
-          <div
-            role="alert"
-            className="mb-4 rounded-[4px] border border-[#EDBCBC] bg-[#FBF0F0] p-4 text-xs font-medium text-[#8C2828]"
+      {/* Error Alert */}
+      {error && (
+        <div className="rounded-[4px] border border-[#EDBCBC] bg-[#FBF0F0] p-4 text-xs text-[#8C2828] flex items-center justify-between">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => loadOrders(true)}
+            className="font-semibold underline ml-3"
           >
-            {error}
-          </div>
-        )}
-
-        {/* Search & Stats Bar */}
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="relative w-full sm:w-80">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#969892]"
-            />
-            <input
-              type="text"
-              placeholder="Search by order #, shop name or code..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-[4px] border border-[#E7E6E0] bg-white pl-9 pr-3 py-1.5 text-xs text-[#242724] placeholder-[#969892] focus:border-[#79565D] focus:outline-none"
-            />
-          </div>
-
-          <div className="text-xs text-[#666864] flex items-center gap-2">
-            <span>
-              Showing <strong className="text-[#242724] tabular-nums">{startRecord}–{endRecord}</strong> of <strong className="text-[#242724] tabular-nums">{total}</strong>
-            </span>
-          </div>
+            Retry
+          </button>
         </div>
+      )}
 
-        {/* High-density Data Table */}
-        <div className="rounded-[6px] border border-[#E7E6E0] bg-white shadow-2xs overflow-hidden">
-          {ordersLoading && orders.length === 0 ? (
-            <div className="p-12 text-center text-xs text-[#666864]">
-              <RefreshCw size={18} className="animate-spin mx-auto text-[#79565D] mb-2" />
-              Loading order queue...
+      {/* Main Table / Mobile Cards */}
+      <div className="rounded-[6px] border border-[#E7E6E0] bg-white shadow-2xs overflow-hidden">
+        {loading ? (
+          <div className="p-8 space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-12 rounded bg-[#F0EFEA] animate-pulse" />
+            ))}
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="p-16 text-center text-xs text-[#666864]">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#FAF9F6] text-[#969892] border border-[#E7E6E0] mb-2.5">
+              <Receipt size={18} />
             </div>
-          ) : filteredOrders.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF6F1] text-[#205234]">
-                <CheckCircle2 size={22} />
-              </div>
-              <h2 className="mt-3 text-sm font-bold text-[#242724]">
-                Queue is clear
-              </h2>
-              <p className="mt-1 text-xs text-[#666864]">
-                {searchQuery
-                  ? "No orders match your filter criteria."
-                  : "All submitted orders have been processed and dispatched."}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
+            <p className="font-bold text-[#242724]">No Orders Found</p>
+            <p className="mt-1 text-[11px] text-[#969892]">
+              {debouncedSearch
+                ? `No orders matching "${debouncedSearch}". Try a different keyword.`
+                : `There are currently no orders in the ${activeTab.replace("_", " ")} queue.`}
+            </p>
+            {debouncedSearch && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="mt-3 text-xs font-semibold text-[#79565D] hover:underline"
+              >
+                Clear Search Filter
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="border-b border-[#E7E6E0] bg-[#FAF9F6] text-[10px] font-bold uppercase tracking-wider text-[#969892]">
                   <tr>
-                    <th className="px-4 py-2.5">Order Number</th>
-                    <th className="px-4 py-2.5">Submitted (IST)</th>
-                    <th className="px-4 py-2.5">Kirana Retailer</th>
-                    <th className="px-4 py-2.5 text-center">Lines & Packs</th>
-                    <th className="px-4 py-2.5 text-right">Order Total</th>
-                    <th className="px-4 py-2.5 text-center">Status</th>
-                    <th className="px-4 py-2.5 text-right">Actions</th>
+                    <th className="px-5 py-2.5">Order / Source</th>
+                    <th className="px-5 py-2.5">Kirana Retailer</th>
+                    <th className="px-5 py-2.5 text-center">Items</th>
+                    <th className="px-5 py-2.5 text-center">Credit Standing</th>
+                    <th className="px-5 py-2.5 text-right">Total Amount</th>
+                    <th className="px-5 py-2.5 text-center">Status</th>
+                    <th className="px-5 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#F0EFEA]">
-                  {filteredOrders.map((ord) => {
-                    const totalQty = ord.lines.reduce(
-                      (acc, l) => acc + l.quantity,
-                      0
-                    );
-                    const freeQty = ord.lines.reduce(
-                      (acc, l) => acc + l.free_quantity,
-                      0
-                    );
+                  {orders.map((order) => {
+                    const isCreditShort =
+                      order.credit &&
+                      order.total_amount > order.credit.available_credit;
 
                     return (
                       <tr
-                        key={ord.id}
-                        onClick={() => setSelectedOrder(ord)}
-                        className={`cursor-pointer transition-colors hover:bg-[#FBFBFA] ${
-                          selectedOrder?.id === ord.id ? "bg-[#F4EFF0]/50" : ""
-                        }`}
+                        key={order.id}
+                        className="hover:bg-[#FBFBFA] transition-colors"
                       >
-                        <td className="px-4 py-3 font-mono font-bold text-[#242724]">
-                          {ord.order_number}
-                        </td>
-                        <td className="px-4 py-3 text-[#666864] tabular-nums whitespace-nowrap">
-                          {formatDate(ord.submitted_at || ord.created_at)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {ord.shop_name ? (
-                            <div>
-                              <p className="font-bold text-[#242724]">
-                                {ord.shop_name}
-                              </p>
-                              <p className="font-mono text-[10px] text-[#969892]">
-                                {ord.retailer_code || ord.retailer_id.slice(0, 8)}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="font-mono text-[#666864]">
-                              {ord.retailer_id.slice(0, 8)}...
+                        <td className="px-5 py-3">
+                          <Link
+                            href={`/order-desk/orders/${order.id}`}
+                            className="font-mono font-bold text-[#242724] hover:text-[#79565D] hover:underline"
+                          >
+                            {order.order_number}
+                          </Link>
+                          <div className="flex items-center gap-1.5 text-[10px] text-[#969892] mt-0.5">
+                            <span>{formatDate(order.submitted_at || order.created_at)}</span>
+                            <span>•</span>
+                            <span className="font-semibold text-[#666864]">
+                              {order.source}
                             </span>
-                          )}
+                          </div>
                         </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span className="font-semibold text-[#242724]">
-                            {ord.lines.length} lines
+
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-1.5 font-bold text-[#242724]">
+                            <Store size={13} className="text-[#79565D] shrink-0" />
+                            <span className="truncate max-w-[170px]">
+                              {order.shop_name || "Kirana Retailer"}
+                            </span>
+                          </div>
+                          <p className="font-mono text-[10px] text-[#969892] mt-0.5">
+                            {order.retailer_code || "Code Pending"}
+                            {order.retailer_city && ` • ${order.retailer_city}`}
+                          </p>
+                        </td>
+
+                        <td className="px-5 py-3 text-center">
+                          <span className="font-mono font-bold text-[#242724]">
+                            {order.items_count} SKUs
                           </span>
-                          <span className="text-[#969892]"> ({totalQty} units)</span>
-                          {freeQty > 0 && (
-                            <Badge variant="success" className="ml-1.5 text-[9px] py-0 px-1">
-                              +{freeQty} free
-                            </Badge>
+                        </td>
+
+                        <td className="px-5 py-3 text-center">
+                          {order.credit ? (
+                            isCreditShort ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#8C2828] bg-[#FBF0F0] px-2 py-0.5 rounded-[3px] border border-[#EDBCBC]">
+                                <AlertTriangle size={11} />
+                                <span>Limit Exceeded</span>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-[#205234]">
+                                {formatCurrency(order.credit.available_credit)} avail
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-[#969892] text-[11px]">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[#242724] tabular-nums whitespace-nowrap">
-                          {formatCurrency(ord.total_amount)}
+
+                        <td className="px-5 py-3 text-right font-mono font-bold text-[#242724] tabular-nums">
+                          {formatCurrency(order.total_amount)}
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <Badge variant="warning">
-                            {ord.status}
+
+                        <td className="px-5 py-3 text-center">
+                          <Badge
+                            variant={
+                              order.status === "APPROVED"
+                                ? "success"
+                                : order.status === "SUBMITTED"
+                                ? "warning"
+                                : order.status === "UNDER_REVIEW"
+                                ? "info"
+                                : order.status === "ON_HOLD"
+                                ? "warning"
+                                : order.status === "REJECTED"
+                                ? "danger"
+                                : "default"
+                            }
+                          >
+                            {order.status.replace("_", " ")}
                           </Badge>
                         </td>
-                        <td
-                          className="px-4 py-3 text-right whitespace-nowrap"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Link
-                            href={`/order-desk/orders/${ord.id}`}
-                            className="inline-flex items-center gap-1 rounded-[4px] bg-[#79565D] px-2.5 py-1 text-[11px] font-bold text-white shadow-2xs hover:bg-[#67474E] transition-colors"
+
+                        <td className="px-5 py-3 text-right space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOrder(order)}
+                            title="Quick Preview"
+                            className="p-1 text-[#969892] hover:text-[#242724] hover:bg-[#F0EFEA] rounded-[4px] transition-colors"
                           >
-                            <span>Verify & Process</span>
+                            <Eye size={14} />
+                          </button>
+                          <Link
+                            href={`/order-desk/orders/${order.id}`}
+                            className="inline-flex items-center gap-1 rounded-[4px] border border-[#E7E6E0] bg-white px-2.5 py-1 text-xs font-semibold text-[#242724] hover:border-[#79565D] hover:text-[#79565D] transition-colors"
+                          >
+                            <span>Review</span>
                             <ChevronRight size={12} />
                           </Link>
                         </td>
@@ -414,41 +482,126 @@ export default function PendingOrdersPage() {
                 </tbody>
               </table>
             </div>
-          )}
 
-          {/* Pagination Footer */}
-          {total > PAGE_SIZE && (
-            <div className="flex items-center justify-between border-t border-[#E7E6E0] bg-[#FAF9F6] px-4 py-3 text-xs">
-              <span className="text-[#666864]">
-                Page {Math.floor(offset / PAGE_SIZE) + 1} of{" "}
-                {Math.ceil(total / PAGE_SIZE)}
+            {/* Mobile Card List View */}
+            <div className="block md:hidden divide-y divide-[#F0EFEA]">
+              {orders.map((order) => {
+                const isCreditShort =
+                  order.credit &&
+                  order.total_amount > order.credit.available_credit;
+
+                return (
+                  <div key={order.id} className="p-4 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <Link
+                        href={`/order-desk/orders/${order.id}`}
+                        className="font-mono font-bold text-xs text-[#242724] hover:text-[#79565D]"
+                      >
+                        {order.order_number}
+                      </Link>
+                      <Badge
+                        variant={
+                          order.status === "APPROVED"
+                            ? "success"
+                            : order.status === "SUBMITTED"
+                            ? "warning"
+                            : order.status === "UNDER_REVIEW"
+                            ? "info"
+                            : order.status === "ON_HOLD"
+                            ? "warning"
+                            : order.status === "REJECTED"
+                            ? "danger"
+                            : "default"
+                        }
+                      >
+                        {order.status.replace("_", " ")}
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-start justify-between text-xs">
+                      <div>
+                        <p className="font-bold text-[#242724]">
+                          {order.shop_name || "Kirana Retailer"}
+                        </p>
+                        <p className="font-mono text-[10px] text-[#969892]">
+                          {order.retailer_code} • {order.items_count} items
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono font-bold text-[#242724] tabular-nums">
+                          {formatCurrency(order.total_amount)}
+                        </p>
+                        <p className="text-[10px] text-[#969892]">
+                          {formatDate(order.submitted_at || order.created_at)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {order.credit && isCreditShort && (
+                      <div className="rounded-[3px] border border-[#EDBCBC] bg-[#FBF0F0] px-2 py-1 text-[10px] font-semibold text-[#8C2828] flex items-center gap-1">
+                        <AlertTriangle size={11} />
+                        <span>Credit Limit Exceeded ({formatCurrency(order.credit.available_credit)} avail)</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1 border-t border-[#F0EFEA]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrder(order)}
+                        className="text-[11px] font-semibold text-[#666864] hover:text-[#242724]"
+                      >
+                        Preview Lines ({order.lines.length})
+                      </button>
+                      <Link
+                        href={`/order-desk/orders/${order.id}`}
+                        className="rounded-[4px] bg-[#79565D] px-3 py-1 text-xs font-semibold text-white hover:bg-[#67474E]"
+                      >
+                        Open Workstation &rarr;
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pagination Controls Footer */}
+            <div className="border-t border-[#E7E6E0] bg-[#FAF9F6] px-5 py-3 flex items-center justify-between text-xs text-[#666864]">
+              <span className="tabular-nums">
+                Showing{" "}
+                <strong className="text-[#242724]">
+                  {total > 0 ? offset + 1 : 0}
+                </strong>{" "}
+                to{" "}
+                <strong className="text-[#242724]">
+                  {Math.min(offset + PAGE_SIZE, total)}
+                </strong>{" "}
+                of <strong className="text-[#242724]">{total}</strong> orders
               </span>
-              <div className="flex items-center gap-2">
+
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={handlePrevPage}
-                  disabled={offset === 0 || ordersLoading}
-                  className="inline-flex items-center gap-1 rounded-[4px] border border-[#E7E6E0] bg-white px-2.5 py-1 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] disabled:opacity-40"
+                  disabled={offset === 0 || loading}
+                  className="rounded-[4px] border border-[#E7E6E0] bg-white p-1 text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724] disabled:opacity-40 transition-colors"
                 >
-                  <ChevronLeft size={13} />
-                  <span>Previous</span>
+                  <ChevronLeft size={16} />
                 </button>
                 <button
                   type="button"
                   onClick={handleNextPage}
-                  disabled={offset + PAGE_SIZE >= total || ordersLoading}
-                  className="inline-flex items-center gap-1 rounded-[4px] border border-[#E7E6E0] bg-white px-2.5 py-1 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] disabled:opacity-40"
+                  disabled={offset + PAGE_SIZE >= total || loading}
+                  className="rounded-[4px] border border-[#E7E6E0] bg-white p-1 text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724] disabled:opacity-40 transition-colors"
                 >
-                  <span>Next</span>
-                  <ChevronRight size={13} />
+                  <ChevronRight size={16} />
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
-      {/* Slide-over Order Quick Preview Drawer */}
+      {/* Slide-over Preview Drawer */}
       {selectedOrder && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-xs">
           <div className="w-full max-w-md h-full bg-white shadow-xl flex flex-col justify-between border-l border-[#E7E6E0]">
@@ -460,7 +613,23 @@ export default function PendingOrdersPage() {
                     <span className="font-mono font-bold text-sm text-[#242724]">
                       {selectedOrder.order_number}
                     </span>
-                    <Badge variant="warning">{selectedOrder.status}</Badge>
+                    <Badge
+                      variant={
+                        selectedOrder.status === "APPROVED"
+                          ? "success"
+                          : selectedOrder.status === "SUBMITTED"
+                          ? "warning"
+                          : selectedOrder.status === "UNDER_REVIEW"
+                          ? "info"
+                          : selectedOrder.status === "ON_HOLD"
+                          ? "warning"
+                          : selectedOrder.status === "REJECTED"
+                          ? "danger"
+                          : "default"
+                      }
+                    >
+                      {selectedOrder.status.replace("_", " ")}
+                    </Badge>
                   </div>
                   <p className="text-[11px] text-[#666864]">
                     Submitted {formatDate(selectedOrder.submitted_at || selectedOrder.created_at)}
@@ -488,6 +657,11 @@ export default function PendingOrdersPage() {
                     <strong>Note:</strong> {selectedOrder.customer_note}
                   </p>
                 )}
+                {selectedOrder.desk_note && (
+                  <p className="mt-1.5 text-[11px] bg-[#FCF6EC] p-2 rounded-[4px] border border-[#EED7B3] text-[#7A4E12]">
+                    <strong>Desk Note:</strong> {selectedOrder.desk_note}
+                  </p>
+                )}
               </div>
 
               {/* Line Items List */}
@@ -502,7 +676,7 @@ export default function PendingOrdersPage() {
                         {l.product_name}
                       </p>
                       <p className="text-[11px] text-[#666864]">
-                        {l.quantity} {l.quantity_unit} · SKU: {l.sku}
+                        {l.quantity} {l.quantity_unit} • SKU: {l.sku}
                         {l.free_quantity > 0 && ` (+${l.free_quantity} free)`}
                       </p>
                     </div>
@@ -547,6 +721,21 @@ export default function PendingOrdersPage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
+  );
+}
+
+export default function OrdersQueuePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 max-w-7xl mx-auto">
+          <div className="h-8 w-48 rounded bg-[#E7E6E0] animate-pulse mb-4" />
+          <div className="h-64 rounded bg-[#E7E6E0] animate-pulse" />
+        </div>
+      }
+    >
+      <OrdersQueueContent />
+    </Suspense>
   );
 }
