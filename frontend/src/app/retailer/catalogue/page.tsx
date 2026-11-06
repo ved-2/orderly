@@ -969,7 +969,7 @@ export default function RetailerCataloguePage() {
 
             <button
               type="button"
-              onClick={openVoicePanel}
+              onClick={() => openAssistant("VOICE")}
               aria-label="Open voice search controls"
               aria-expanded={voicePanelOpen}
               className="relative flex size-11 items-center justify-center overflow-hidden rounded-full border border-[#E7E6E0] bg-white p-0.5 shadow-2xs transition-colors hover:border-[#79565D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/30"

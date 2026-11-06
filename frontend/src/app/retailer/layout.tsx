@@ -22,6 +22,7 @@ import {
   useAIAssistant,
 } from "@/contexts/ai-assistant-context";
 import { AIAssistantChatDrawer } from "@/components/ai-assistant/chat-drawer";
+import { AIAssistantVoiceModal } from "@/components/ai-assistant/voice-modal";
 
 /* ------------------------------------------------------------------ */
 /*  Navigation definitions                                             */
@@ -270,8 +271,9 @@ function RetailerLayoutInner({
         <main className="min-w-0 flex-1 pb-24 md:pb-8">{children}</main>
       </div>
 
-      {/* Global AI Assistant Chat Drawer */}
+      {/* Global AI Assistant Chat Drawer & Voice Modal */}
       <AIAssistantChatDrawer />
+      <AIAssistantVoiceModal />
 
       {/* Mobile Bottom Navigation Bar — exactly 5 items: Home, Catalogue, AI (middle), Orders, Credit */}
       <nav
