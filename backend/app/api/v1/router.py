@@ -10,6 +10,7 @@ from app.modules.retailers.admin_router import router as distributor_retailers_r
 from app.modules.retailers.settings_router import router as retailer_settings_router
 from app.modules.users.staff_router import router as distributor_staff_router
 from app.modules.credit.router import router as credit_router
+from app.modules.ai_assistant.router import router as assistant_router
 
 api_router = APIRouter()
 
@@ -24,6 +25,7 @@ api_router.include_router(products_router)
 api_router.include_router(orders_router)
 api_router.include_router(retailer_settings_router)
 api_router.include_router(auth.router)
+api_router.include_router(assistant_router)
 
 
 @api_router.get("/health", tags=["Health"])

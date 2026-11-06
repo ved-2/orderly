@@ -154,3 +154,20 @@ class AssistantChatResponse(BaseModel):
     is_order_confirmed: bool = False
     created_order_id: str | None = None
     pending_clarification: str | None = None
+
+
+class GroqExtractedItem(BaseModel):
+    product_phrase: str
+    quantity: int = 1
+    quantity_unit: QuantityUnit = QuantityUnit.PIECE
+    pack_size_hint: float | None = None
+    pack_unit_hint: str | None = None
+
+
+class GroqNLUOutput(BaseModel):
+    intent: AssistantIntent
+    items: list[GroqExtractedItem] = Field(default_factory=list)
+    target_product_to_modify: str | None = None
+    clarification_choice: str | None = None
+    chat_reply: str
+    audio_reply: str
