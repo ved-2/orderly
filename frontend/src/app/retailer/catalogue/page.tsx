@@ -35,9 +35,11 @@ import {
   Layers,
   Mic,
   MicOff,
+  Bot,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
+import { useAIAssistant } from "@/contexts/ai-assistant-context";
 import { apiRequest } from "@/lib/api";
 import { ProductThumbnail } from "@/components/ui/product-thumbnail";
 import { Badge } from "@/components/ui/badge";
@@ -180,6 +182,7 @@ export default function RetailerCataloguePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
+  const { openAssistant } = useAIAssistant();
 
   // Search & Filter States
   const initialSearch = searchParams.get("search") || "";
@@ -952,7 +955,18 @@ export default function RetailerCataloguePage() {
             </InputGroup>
           </form>
 
-          <div className="relative flex shrink-0 justify-center">
+          <div className="relative flex shrink-0 items-center gap-2 justify-center">
+            {/* AI Assistant Chat Trigger */}
+            <button
+              type="button"
+              onClick={() => openAssistant("CHAT")}
+              aria-label="Open AI Assistant"
+              title="Chat with AI Ordering Assistant"
+              className="relative flex size-11 items-center justify-center rounded-full border border-[#E7E6E0] bg-white text-[#79565D] shadow-2xs transition-colors hover:border-[#79565D] hover:bg-[#F4EFF0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/30"
+            >
+              <Sparkles size={18} />
+            </button>
+
             <button
               type="button"
               onClick={openVoicePanel}
@@ -1013,6 +1027,18 @@ export default function RetailerCataloguePage() {
                   }`}
                 >
                   {microphoneEnabled ? <MicOff size={17} /> : <Mic size={17} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeVoicePanel();
+                    openAssistant("CHAT");
+                  }}
+                  aria-label="Switch to Chat Mode"
+                  title="Switch to Chat Mode"
+                  className="grid size-10 shrink-0 place-items-center rounded-full border border-white/70 bg-white/55 text-[#5b4b4d] shadow-sm backdrop-blur-lg transition hover:scale-105 hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40"
+                >
+                  <Bot size={17} />
                 </button>
                 <button
                   type="button"

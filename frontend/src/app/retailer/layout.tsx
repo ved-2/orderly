@@ -12,10 +12,16 @@ import {
   Store,
   Wallet,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
 import { getCartItemCount, getCartSubtotal } from "@/lib/cart";
+import {
+  AIAssistantProvider,
+  useAIAssistant,
+} from "@/contexts/ai-assistant-context";
+import { AIAssistantChatDrawer } from "@/components/ai-assistant/chat-drawer";
 
 /* ------------------------------------------------------------------ */
 /*  Navigation definitions                                             */
@@ -28,9 +34,12 @@ const sidebarNavigation = [
   { label: "Credit", href: "/retailer/credit", icon: Wallet },
 ];
 
-const mobileNavigation = [
+const mobileNavLeft = [
   { label: "Home", href: "/retailer/dashboard", icon: Home },
   { label: "Catalogue", href: "/retailer/catalogue", icon: Package },
+];
+
+const mobileNavRight = [
   { label: "Orders", href: "/retailer/orders", icon: ShoppingBag },
   { label: "Credit", href: "/retailer/credit", icon: Wallet },
 ];
@@ -55,15 +64,16 @@ function formatCurrency(amount: number): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Layout                                                             */
+/*  Layout Inner                                                       */
 /* ------------------------------------------------------------------ */
 
-export default function RetailerLayout({
+function RetailerLayoutInner({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { openAssistant, isOpen: isAIOpen } = useAIAssistant();
 
   const [cartCount, setCartCount] = useState(0);
   const [cartSubtotal, setCartSubtotal] = useState(0);
@@ -118,11 +128,14 @@ export default function RetailerLayout({
       const [path, hash] = href.split("#");
       return pathname === path && currentHash === `#${hash}`;
     }
-    return pathname === href && !mobileNavigation.some((item) => {
-      if (!item.href.includes("#")) return false;
-      const [path, hash] = item.href.split("#");
-      return path === href && currentHash === `#${hash}`;
-    });
+    return (
+      pathname === href &&
+      ![...mobileNavLeft, ...mobileNavRight].some((item) => {
+        if (!item.href.includes("#")) return false;
+        const [path, hash] = item.href.split("#");
+        return path === href && currentHash === `#${hash}`;
+      })
+    );
   };
 
   return (
@@ -181,7 +194,7 @@ export default function RetailerLayout({
 
       {/* Main Container */}
       <div className="flex min-h-[calc(100vh-56px)] w-full">
-        {/* Desktop Sidebar (Fixed / Stiff) */}
+        {/* Desktop Sidebar */}
         <aside className="hidden w-56 shrink-0 border-r border-[#E7E6E0] bg-[#FFFFFF] p-4 md:flex flex-col justify-between sticky top-14 h-[calc(100vh-56px)] overflow-y-auto">
           {/* Main Nav Items */}
           <div>
@@ -208,6 +221,23 @@ export default function RetailerLayout({
                   </Link>
                 );
               })}
+
+              {/* AI Assistant Sidebar Action */}
+              <button
+                type="button"
+                onClick={() => openAssistant("CHAT")}
+                className={`mt-2 flex w-full items-center gap-3 px-3 py-2.5 rounded-[4px] text-xs font-medium transition-all duration-150 ${
+                  isAIOpen
+                    ? "bg-[#79565D] text-white shadow-2xs"
+                    : "text-[#79565D] bg-[#79565D]/10 hover:bg-[#79565D]/15"
+                }`}
+              >
+                <Sparkles size={16} className={isAIOpen ? "text-white" : "text-[#79565D]"} />
+                <span>AI Assistant</span>
+                <span className="ml-auto rounded-full bg-[#79565D] px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                  Voice/Chat
+                </span>
+              </button>
             </nav>
           </div>
 
@@ -240,12 +270,16 @@ export default function RetailerLayout({
         <main className="min-w-0 flex-1 pb-24 md:pb-8">{children}</main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar — exactly 5 items: Home, Catalogue, AI, Orders, Credit */}
+      {/* Global AI Assistant Chat Drawer */}
+      <AIAssistantChatDrawer />
+
+      {/* Mobile Bottom Navigation Bar — exactly 5 items: Home, Catalogue, AI (middle), Orders, Credit */}
       <nav
         aria-label="Retailer navigation"
-        className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around rounded-t-[24px] border-t border-white/75 bg-[linear-gradient(120deg,rgba(255,255,255,0.9),rgba(244,239,240,0.86)_55%,rgba(237,230,240,0.9))] px-1.5 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] shadow-[0_-8px_28px_rgba(61,48,49,0.12)] backdrop-blur-2xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around rounded-t-[24px] border-t border-white/75 bg-[linear-gradient(120deg,rgba(255,255,255,0.95),rgba(244,239,240,0.9)_55%,rgba(237,230,240,0.95))] px-1 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] shadow-[0_-8px_28px_rgba(61,48,49,0.12)] backdrop-blur-2xl md:hidden"
       >
-        {mobileNavigation.map((item) => {
+        {/* Left 2 items: Home, Catalogue */}
+        {mobileNavLeft.map((item) => {
           const Icon = item.icon;
           const active = isNavActive(item.href);
 
@@ -255,9 +289,52 @@ export default function RetailerLayout({
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`group flex min-w-0 flex-1 flex-col items-center justify-end gap-0.5 text-[10px] font-medium transition-colors ${
-                active
-                  ? "text-[#79565D]"
-                  : "text-[#666864] hover:text-[#242724]"
+                active ? "text-[#79565D]" : "text-[#666864] hover:text-[#242724]"
+              }`}
+            >
+              <div
+                className={`grid size-9 place-items-center rounded-full transition-all duration-200 ${
+                  active
+                    ? "-mt-5 size-11 border-[3px] border-[#F6F5F1] bg-[linear-gradient(145deg,#79565D,#9C7683)] text-white shadow-[0_5px_14px_rgba(121,86,93,0.32)]"
+                    : "text-[#666864] group-hover:bg-white/70"
+                }`}
+              >
+                <Icon size={active ? 19 : 18} strokeWidth={active ? 2.2 : 1.8} />
+              </div>
+              <span className={`truncate leading-tight ${active ? "font-semibold text-[#67474E]" : ""}`}>
+                {item.label}
+              </span>
+            </Link>
+          );
+        })}
+
+        {/* Center: AI Assistant Button */}
+        <button
+          type="button"
+          onClick={() => openAssistant("CHAT")}
+          aria-label="Open AI Ordering Assistant"
+          className="group flex min-w-0 flex-1 flex-col items-center justify-end gap-0.5 text-[10px] font-medium transition-colors text-[#79565D]"
+        >
+          <div className="-mt-6 size-12 grid place-items-center rounded-full border-[3px] border-[#F6F5F1] bg-[linear-gradient(135deg,#79565D,#9C7683)] text-white shadow-[0_6px_18px_rgba(121,86,93,0.4)] transition-transform active:scale-95">
+            <Sparkles size={20} className="animate-pulse" />
+          </div>
+          <span className="truncate leading-tight font-semibold text-[#67474E]">
+            AI Order
+          </span>
+        </button>
+
+        {/* Right 2 items: Orders, Credit */}
+        {mobileNavRight.map((item) => {
+          const Icon = item.icon;
+          const active = isNavActive(item.href);
+
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={`group flex min-w-0 flex-1 flex-col items-center justify-end gap-0.5 text-[10px] font-medium transition-colors ${
+                active ? "text-[#79565D]" : "text-[#666864] hover:text-[#242724]"
               }`}
             >
               <div
@@ -277,5 +354,15 @@ export default function RetailerLayout({
         })}
       </nav>
     </div>
+  );
+}
+
+export default function RetailerLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <AIAssistantProvider>
+      <RetailerLayoutInner>{children}</RetailerLayoutInner>
+    </AIAssistantProvider>
   );
 }
