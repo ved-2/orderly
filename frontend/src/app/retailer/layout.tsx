@@ -144,7 +144,7 @@ function RetailerLayoutInner({
   return (
     <div className="min-h-screen w-full bg-[#F6F5F1] text-[#242724]">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#E7E6E0] bg-[#FFFFFF]/90 backdrop-blur-md">
+      <header className="fixed top-0 left-0 right-0 z-40 h-14 border-b border-[#E7E6E0] bg-[#FFFFFF]/95 backdrop-blur-md">
         <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
           {/* Brand Mark */}
           <div className="flex items-center gap-3">
@@ -196,7 +196,7 @@ function RetailerLayoutInner({
       </header>
 
       {/* Main Container */}
-      <div className={`flex w-full ${isAssistantPage ? "h-[calc(100dvh-56px)] overflow-hidden" : "min-h-[calc(100vh-56px)]"}`}>
+      <div className={`flex w-full pt-14 ${isAssistantPage ? "h-[100dvh] overflow-hidden" : "min-h-screen"}`}>
 
         {/* Desktop Sidebar */}
         <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-60 z-30 flex-col justify-between border-r border-[#E7E6E0] bg-[#FFFFFF] p-4 overflow-y-auto">
