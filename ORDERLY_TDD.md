@@ -9,13 +9,13 @@
 - **Domain:** Fast-Moving Consumer Goods (FMCG) B2B Supply Chain & Automated Order Capture
 - **Target Enterprise Client:** Company A, Jabalpur, Madhya Pradesh *(FMCG Distributor for 4 Packaged Food & Home Care Brands, Serving 1,800 Neighborhood Kirana Stores with ₹85–100 Cr Annual Turnover)*
 - **Author:** Vedant Kolte
-- **Version:** 1.0.0 (Production Release & Internship Evaluation Submission)
+- **Version:** 1.0.0 
 - **Document Date:** November 9, 2026
 - **Project Repository:** https://github.com/ved-2/orderly
 - **Live Backend Deployment:** https://orderly-w9x4.onrender.com
 - **Live OpenAPI Documentation:** https://orderly-w9x4.onrender.com/docs
 - **Backend Health Check:** https://orderly-w9x4.onrender.com/health
-- **Frontend Live Deployment:** [TO BE FILLED]
+- **Frontend Live Deployment:** https://orderly-eight-silk.vercel.app/
 
 ---
 
