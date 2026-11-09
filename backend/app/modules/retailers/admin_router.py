@@ -1,4 +1,6 @@
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
 from app.modules.credit.models import CreditAccount, CreditTransaction
+from app.modules.orders.models import Order
 from app.modules.retailers.models import Retailer
 from app.modules.retailers.schemas import (
     CreditLimitUpdateRequest,
@@ -98,6 +101,171 @@ def list_retailers_for_admin(
             for r in retailers
         ],
         "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/dormant")
+def list_dormant_retailers(
+    days: int = Query(default=14, ge=1, description="Number of days of inactivity to qualify as dormant"),
+    city: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("DISTRIBUTOR_ADMIN", "ORDER_DESK")),
+):
+    """
+    Dashboard of retailers with no order in the last X days (default: 14 days).
+    Calculates days inactive, last order date, current outstanding credit balance,
+    and provides pre-formatted WhatsApp re-engagement links.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Base query for active retailers
+    ret_query = select(Retailer).where(
+        Retailer.is_active.is_(True),
+        Retailer.registration_status == "ACTIVE",
+    )
+    if city and city.strip():
+        ret_query = ret_query.where(func.lower(Retailer.city) == city.strip().lower())
+
+    active_retailers = db.scalars(ret_query).all()
+    if not active_retailers:
+        return {
+            "summary": {
+                "total_active_retailers": 0,
+                "total_dormant_retailers": 0,
+                "dormancy_rate_percentage": 0.0,
+                "threshold_days": days,
+                "total_outstanding_at_risk": 0.0,
+            },
+            "items": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    active_retailer_ids = [r.id for r in active_retailers]
+
+    # 2. Get latest valid order for each retailer (excluding CANCELLED / REJECTED)
+    orders_stmt = (
+        select(
+            Order.retailer_id,
+            func.max(Order.created_at).label("last_order_at"),
+        )
+        .where(
+            Order.retailer_id.in_(active_retailer_ids),
+            Order.status.not_in(["CANCELLED", "REJECTED"]),
+        )
+        .group_by(Order.retailer_id)
+    )
+    last_orders_rows = db.execute(orders_stmt).all()
+    last_order_map = {row.retailer_id: row.last_order_at for row in last_orders_rows}
+
+    # 3. Fetch recent orders to get last order number and amount
+    recent_orders = (
+        db.scalars(
+            select(Order)
+            .where(
+                Order.retailer_id.in_(active_retailer_ids),
+                Order.status.not_in(["CANCELLED", "REJECTED"]),
+            )
+            .order_by(Order.created_at.desc())
+        ).all()
+    )
+    latest_order_obj_map: dict[UUID, Order] = {}
+    for o in recent_orders:
+        if o.retailer_id not in latest_order_obj_map:
+            latest_order_obj_map[o.retailer_id] = o
+
+    # 4. Fetch credit accounts
+    credit_accounts = db.scalars(
+        select(CreditAccount).where(CreditAccount.retailer_id.in_(active_retailer_ids))
+    ).all()
+    credit_map = {c.retailer_id: c for c in credit_accounts}
+
+    # 5. Evaluate dormancy
+    dormant_list = []
+    total_risk_outstanding = Decimal("0")
+
+    for r in active_retailers:
+        last_dt = last_order_map.get(r.id)
+        last_order = latest_order_obj_map.get(r.id)
+        credit = credit_map.get(r.id)
+        current_out = credit.current_outstanding if credit else Decimal("0")
+        credit_lim = credit.credit_limit if credit else Decimal("0")
+
+        is_dormant = False
+        days_inactive = 0
+
+        if last_dt is not None:
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            delta = now - last_dt
+            days_inactive = max(0, delta.days)
+            if delta.days >= days:
+                is_dormant = True
+        else:
+            reg_dt = r.created_at
+            if reg_dt.tzinfo is None:
+                reg_dt = reg_dt.replace(tzinfo=timezone.utc)
+            delta = now - reg_dt
+            days_inactive = max(0, delta.days)
+            if delta.days >= days:
+                is_dormant = True
+
+        if is_dormant:
+            total_risk_outstanding += current_out
+            clean_phone = "".join(filter(str.isdigit, r.phone or ""))
+            if clean_phone.startswith("91") and len(clean_phone) > 10:
+                pass
+            elif len(clean_phone) == 10:
+                clean_phone = f"91{clean_phone}"
+
+            wa_text = (
+                f"Namaste {r.owner_name} ji ({r.shop_name}), Orderly wholesale desk se sampark kar rahe hain. "
+                f"Aapka pichle {days_inactive} dino se koi order nahi aaya. Naye schemes aur rates app me update ho gaye hain. "
+                f"Kya aapko kisi stock ki zaroorat hai?"
+            )
+            whatsapp_url = f"https://wa.me/{clean_phone}?text={quote(wa_text)}"
+
+            dormant_list.append({
+                "retailer_id": str(r.id),
+                "retailer_code": r.retailer_code,
+                "shop_name": r.shop_name,
+                "owner_name": r.owner_name,
+                "phone": r.phone,
+                "city": r.city,
+                "address": r.address,
+                "days_inactive": days_inactive,
+                "last_order_date": last_dt.isoformat() if last_dt else None,
+                "last_order_id": str(last_order.id) if last_order else None,
+                "last_order_number": last_order.order_number if last_order else None,
+                "last_order_amount": float(last_order.total_amount) if last_order else None,
+                "credit_limit": float(credit_lim),
+                "current_outstanding": float(current_out),
+                "whatsapp_url": whatsapp_url,
+            })
+
+    dormant_list.sort(key=lambda x: x["days_inactive"], reverse=True)
+
+    total_dormant = len(dormant_list)
+    total_active = len(active_retailers)
+    dormancy_pct = round((total_dormant / total_active * 100), 1) if total_active > 0 else 0.0
+
+    paginated_items = dormant_list[offset : offset + limit]
+
+    return {
+        "summary": {
+            "total_active_retailers": total_active,
+            "total_dormant_retailers": total_dormant,
+            "dormancy_rate_percentage": dormancy_pct,
+            "threshold_days": days,
+            "total_outstanding_at_risk": float(total_risk_outstanding),
+        },
+        "items": paginated_items,
+        "total": total_dormant,
         "limit": limit,
         "offset": offset,
     }

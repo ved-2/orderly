@@ -30,3 +30,4 @@ Thumbs.db
 # Firebase Admin credentials
 backend/secrets/
 *service-account*.json
+backend/.sessions/

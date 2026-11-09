@@ -100,3 +100,115 @@ def test_process_assistant_chat_orchestration():
     resp2 = process_assistant_chat(mock_db, mock_user, req2)
     assert resp2.intent == AssistantIntent.CLEAR_DRAFT
     assert any(a.action == CartActionType.CLEAR for a in resp2.cart_actions)
+
+
+def test_process_assistant_chat_multi_turn_clarification():
+    mock_db = MagicMock()
+    retailer_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    brand_bb = uuid.uuid4()
+    brand_dd = uuid.uuid4()
+
+    mock_user = User(id=user_id, email="retailer2@kirana.com", role="RETAILER")
+    mock_retailer = Retailer(
+        id=retailer_id,
+        retailer_code="RET-002",
+        shop_name="Sharma Stores",
+        owner_name="Sanjay Sharma",
+        phone="9876543211",
+        address="Wright Town, Jabalpur",
+        is_active=True,
+        registration_status="ACTIVE",
+    )
+
+    rl_tea = Product(
+        id=uuid.uuid4(),
+        brand_id=brand_bb,
+        sku="RL-TEA-500G",
+        name="Red Label Tea 500g",
+        category="Tea",
+        pack_size=Decimal("500"),
+        pack_unit="gm",
+        units_per_case=12,
+        is_active=True,
+    )
+    dd_tea = Product(
+        id=uuid.uuid4(),
+        brand_id=brand_dd,
+        sku="DD-TEA-250G",
+        name="DailyDrop Assam Tea 250g",
+        category="Tea",
+        pack_size=Decimal("250"),
+        pack_unit="gm",
+        units_per_case=24,
+        is_active=True,
+    )
+
+    alias_rl = ProductAlias(
+        id=uuid.uuid4(),
+        product_id=rl_tea.id,
+        alias="Red Label Chai",
+        normalized_alias="red label chai",
+        language="hi-Latn",
+    )
+    alias_dd = ProductAlias(
+        id=uuid.uuid4(),
+        product_id=dd_tea.id,
+        alias="DailyDrop Chai",
+        normalized_alias="dailydrop chai",
+        language="hi-Latn",
+    )
+
+    def mock_scalar(query):
+        q_str = str(query)
+        if "retailer_id" in q_str and "retailer_users" in q_str:
+            return retailer_id
+        if "FROM retailers" in q_str:
+            return mock_retailer
+        return None
+
+    def mock_execute(query):
+        mock_result = MagicMock()
+        q_str = str(query)
+        if "FROM products" in q_str:
+            mock_result.all.return_value = [
+                (rl_tea, "Red Label"),
+                (dd_tea, "DailyDrop"),
+            ]
+        elif "FROM product_aliases" in q_str:
+            mock_result.scalars.return_value.all.return_value = [alias_rl, alias_dd]
+        elif "FROM inventory" in q_str:
+            mock_result.all.return_value = [
+                (rl_tea.id, 50, 0),
+                (dd_tea.id, 40, 0),
+            ]
+        else:
+            mock_result.all.return_value = []
+        return mock_result
+
+    mock_db.scalar.side_effect = mock_scalar
+    mock_db.execute.side_effect = mock_execute
+
+    # Turn 1: Retailer says "chai" without brand or pack size
+    req1 = AssistantChatRequest(message="Mujhe chai chahiye", mode="CHAT")
+    resp1 = process_assistant_chat(mock_db, mock_user, req1)
+    assert resp1.intent == AssistantIntent.CLARIFY
+    assert resp1.pending_request is not None
+    assert "Red Label" in resp1.reply or "DailyDrop" in resp1.reply
+
+    # Turn 2: Retailer answers "Red Label"
+    req2 = AssistantChatRequest(message="Red Label", mode="CHAT")
+    resp2 = process_assistant_chat(mock_db, mock_user, req2)
+    # Since Red Label has 500g and selling unit is missing, it asks selling unit
+    assert resp2.intent == AssistantIntent.CLARIFY
+    assert "Packet mein ya case mein" in resp2.reply or "Kitne" in resp2.reply
+
+    # Turn 3: Retailer answers "2 case"
+    req3 = AssistantChatRequest(message="2 case", mode="CHAT")
+    resp3 = process_assistant_chat(mock_db, mock_user, req3)
+    assert resp3.intent == AssistantIntent.ADD_PRODUCT
+    assert len(resp3.cart_actions) == 1
+    assert resp3.cart_actions[0].product_id == str(rl_tea.id)
+    assert resp3.cart_actions[0].quantity == 2
+    assert resp3.cart_actions[0].quantity_unit == QuantityUnit.CASE
+    assert "Red Label" in resp3.reply

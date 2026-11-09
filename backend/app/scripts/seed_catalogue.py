@@ -5,7 +5,8 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.modules.pricing.default_price_models import DistributorProductPrice
-from app.modules.products.models import Brand, Product
+from app.modules.products.models import Brand, Product, ProductAlias
+from app.modules.ai_assistant.matcher import BUILTIN_CATALOGUE_ALIASES
 
 
 CATALOGUE = [
@@ -90,6 +91,24 @@ def seed_catalogue() -> int:
                         valid_from=now,
                     )
                 )
+
+            aliases = BUILTIN_CATALOGUE_ALIASES.get(sku, [])
+            for al in aliases:
+                existing_al = db.scalar(
+                    select(ProductAlias.id).where(
+                        ProductAlias.product_id == product.id,
+                        ProductAlias.normalized_alias == al.lower(),
+                    )
+                )
+                if not existing_al:
+                    db.add(
+                        ProductAlias(
+                            product_id=product.id,
+                            alias=al,
+                            normalized_alias=al.lower(),
+                            language="hi" if any(ord(c) >= 0x0900 and ord(c) <= 0x097F for c in al) else "en",
+                        )
+                    )
 
     return inserted
 

@@ -30,6 +30,7 @@ import { AIAssistantVoiceModal } from "@/components/ai-assistant/voice-modal";
 
 const sidebarNavigation = [
   { label: "Home", href: "/retailer/dashboard", icon: Home },
+  { label: "AI Assistant", href: "/retailer/assistant", icon: Sparkles },
   { label: "Catalogue", href: "/retailer/catalogue", icon: Package },
   { label: "Orders", href: "/retailer/orders", icon: ShoppingBag },
   { label: "Credit", href: "/retailer/credit", icon: Wallet },
@@ -223,22 +224,7 @@ function RetailerLayoutInner({
                 );
               })}
 
-              {/* AI Assistant Sidebar Action */}
-              <button
-                type="button"
-                onClick={() => openAssistant("CHAT")}
-                className={`mt-2 flex w-full items-center gap-3 px-3 py-2.5 rounded-[4px] text-xs font-medium transition-all duration-150 ${
-                  isAIOpen
-                    ? "bg-[#79565D] text-white shadow-2xs"
-                    : "text-[#79565D] bg-[#79565D]/10 hover:bg-[#79565D]/15"
-                }`}
-              >
-                <Sparkles size={16} className={isAIOpen ? "text-white" : "text-[#79565D]"} />
-                <span>AI Assistant</span>
-                <span className="ml-auto rounded-full bg-[#79565D] px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                  Voice/Chat
-                </span>
-              </button>
+
             </nav>
           </div>
 
@@ -310,20 +296,25 @@ function RetailerLayoutInner({
           );
         })}
 
-        {/* Center: AI Assistant Button */}
-        <button
-          type="button"
-          onClick={() => openAssistant("CHAT")}
-          aria-label="Open AI Ordering Assistant"
+        {/* Center: AI Assistant Link */}
+        <Link
+          href="/retailer/assistant"
+          aria-label="Open AI Assistanting Assistant"
           className="group flex min-w-0 flex-1 flex-col items-center justify-end gap-0.5 text-[10px] font-medium transition-colors text-[#79565D]"
         >
-          <div className="-mt-6 size-12 grid place-items-center rounded-full border-[3px] border-[#F6F5F1] bg-[linear-gradient(135deg,#79565D,#9C7683)] text-white shadow-[0_6px_18px_rgba(121,86,93,0.4)] transition-transform active:scale-95">
-            <Sparkles size={20} className="animate-pulse" />
+          <div className={`-mt-6 size-12 grid place-items-center rounded-full border-[3px] border-[#F6F5F1] transition-transform active:scale-95 ${
+            pathname === "/retailer/assistant"
+              ? "bg-[#242724] text-white shadow-[0_6px_18px_rgba(36,39,36,0.35)]"
+              : "bg-[linear-gradient(135deg,#79565D,#9C7683)] text-white shadow-[0_6px_18px_rgba(121,86,93,0.4)]"
+          }`}>
+            <Sparkles size={20} />
           </div>
-          <span className="truncate leading-tight font-semibold text-[#67474E]">
+          <span className={`truncate leading-tight font-semibold ${
+            pathname === "/retailer/assistant" ? "text-[#242724]" : "text-[#67474E]"
+          }`}>
             AI Order
           </span>
-        </button>
+        </Link>
 
         {/* Right 2 items: Orders, Credit */}
         {mobileNavRight.map((item) => {

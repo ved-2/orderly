@@ -106,6 +106,7 @@ export default function SalesmanPortalPage() {
 
   // 1. Online / Offline Listener
   useEffect(() => {
+    document.title = "Salesman Field Beat Portal | Orderly";
     setIsOnline(navigator.onLine);
     setOfflineQueue(getOfflineQueue());
 

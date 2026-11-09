@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Store,
   RefreshCw,
+  Truck,
+  UserX,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -83,6 +85,16 @@ const navItems: NavItem[] = [
     label: "Tally Export",
     href: "/distributor/tally-export",
     icon: FileSpreadsheet,
+  },
+  {
+    label: "Van Loading",
+    href: "/order-desk/van-loading",
+    icon: Truck,
+  },
+  {
+    label: "Dormant (14d)",
+    href: "/order-desk/dormant-retailers",
+    icon: UserX,
   },
 ];
 

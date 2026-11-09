@@ -78,11 +78,33 @@ export interface AssistantMessage {
   pending_clarification?: string | null;
 }
 
+export interface DraftItem {
+  product_id?: string | null;
+  sku?: string | null;
+  product_name?: string | null;
+  brand_name?: string | null;
+  pack_size?: number | null;
+  pack_unit?: string | null;
+  quantity: number;
+  quantity_unit: QuantityUnit;
+  unit_price?: number | null;
+}
+
+export interface OrderConfirmationResult {
+  order_id: string;
+  order_number: string;
+  status: string;
+  total_amount: number;
+  items_count: number;
+  message: string;
+}
+
 export interface AssistantSessionResponse {
   session_id: string;
   retailer_id: string;
   mode: "CHAT" | "VOICE";
   messages: AssistantMessage[];
+  draft_items?: DraftItem[];
   pending_question?: string | null;
   pending_options?: ClarificationOption[];
   is_confirmed: boolean;
@@ -108,12 +130,23 @@ interface AIAssistantContextType {
   messages: AssistantMessage[];
   isLoading: boolean;
   isSpeaking: boolean;
+  isCoolingDown: boolean;
+  lastSpokenText: string;
+  recentSpokenTexts: string[];
   activeClarification: string | null;
+  pendingOptions: ClarificationOption[];
   suggestedProducts: ProductCardInfo[];
+  isOrderConfirmed: boolean;
+  createdOrderId: string | null;
+  clearConfirmation: () => void;
   openAssistant: (mode?: "CHAT" | "VOICE") => void;
   closeAssistant: () => void;
   setMode: (mode: "CHAT" | "VOICE") => void;
   sendMessage: (text: string) => Promise<void>;
+  scanParchi: (file: File) => Promise<void>;
+  confirmOrder: (notes?: string) => Promise<OrderConfirmationResult>;
+  updateDraftQuantity: (productId: string, quantity: number, quantityUnit: QuantityUnit) => Promise<void>;
+  removeDraftItem: (productId: string, quantityUnit?: QuantityUnit) => Promise<void>;
   resetSession: () => Promise<void>;
   speakText: (text: string) => void;
   stopSpeaking: () => void;
@@ -127,14 +160,27 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isCoolingDown, setIsCoolingDown] = useState(false);
+  const [lastSpokenText, setLastSpokenText] = useState("");
+  const [recentSpokenTexts, setRecentSpokenTexts] = useState<string[]>([]);
   const [activeClarification, setActiveClarification] = useState<string | null>(null);
+  const [pendingOptions, setPendingOptions] = useState<ClarificationOption[]>([]);
   const [suggestedProducts, setSuggestedProducts] = useState<ProductCardInfo[]>([]);
+  const [isOrderConfirmed, setIsOrderConfirmed] = useState(false);
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
+
+  const clearConfirmation = useCallback(() => {
+    setIsOrderConfirmed(false);
+    setCreatedOrderId(null);
+  }, []);
 
   // Stop Web Speech synthesis safely
   const stopSpeaking = useCallback(() => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
+      setIsCoolingDown(false);
+      window.dispatchEvent(new CustomEvent("orderly-ai-speaking-end"));
     }
   }, []);
 
@@ -144,6 +190,12 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
       if (typeof window === "undefined" || !window.speechSynthesis || !text) return;
 
       stopSpeaking();
+      // HARDWARE LOCK: signal speech recognition to ABORT immediately and clear audio buffer
+      window.dispatchEvent(new CustomEvent("orderly-ai-speaking-start"));
+      setIsSpeaking(true);
+      setIsCoolingDown(false);
+      setLastSpokenText(text);
+      setRecentSpokenTexts((prev) => [text, ...prev.slice(0, 4)]);
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
@@ -158,9 +210,21 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
         utterance.voice = hiVoice;
       }
 
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        setIsCoolingDown(false);
+      };
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        setIsCoolingDown(true);
+        window.dispatchEvent(new CustomEvent("orderly-ai-speaking-end"));
+        setTimeout(() => setIsCoolingDown(false), 800);
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        setIsCoolingDown(false);
+        window.dispatchEvent(new CustomEvent("orderly-ai-speaking-end"));
+      };
 
       window.speechSynthesis.speak(utterance);
     },
@@ -174,6 +238,11 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
       if (data?.messages) {
         setMessages(data.messages);
         setActiveClarification(data.pending_question || null);
+        setPendingOptions(data.pending_options || []);
+        if (data.is_confirmed) {
+          setIsOrderConfirmed(true);
+          setCreatedOrderId(data.created_order_id || null);
+        }
       }
     } catch {
       // Ignored for non-retailer users or during auth loading
@@ -257,6 +326,10 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
           if (response.suggested_products?.length > 0) {
             setSuggestedProducts(response.suggested_products);
           }
+          if (response.is_order_confirmed) {
+            setIsOrderConfirmed(true);
+            setCreatedOrderId(response.created_order_id);
+          }
 
           // Apply cart actions returned from backend
           if (response.cart_actions?.length > 0) {
@@ -286,6 +359,125 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
     [isLoading, mode, applyCartActions, speakText]
   );
 
+  const scanParchi = useCallback(
+    async (file: File) => {
+      setIsLoading(true);
+      const tempUserMsg: AssistantMessage = {
+        id: `user-parchi-${Date.now()}`,
+        role: "user",
+        content: `📸 [Parchi Upload: ${file.name}]`,
+        audio_text: "Parchi upload ki gayi hai.",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, tempUserMsg]);
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await apiRequest<AssistantChatResponse>("/assistant/scan-parchi", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (response) {
+          setMessages(response.messages);
+          if (response.suggested_products?.length > 0) {
+            setSuggestedProducts(response.suggested_products);
+          }
+          if (response.cart_actions?.length > 0) {
+            applyCartActions(response.cart_actions);
+          }
+          if (response.audio_text) {
+            speakText(response.audio_text);
+          }
+        }
+      } catch (err) {
+        const errorMsg: AssistantMessage = {
+          id: `err-${Date.now()}`,
+          role: "assistant",
+          content:
+            err instanceof Error
+              ? `Parchi scan error: ${err.message}`
+              : "Parchi scan nahi ho saki. Kripya clear photo upload karein.",
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [applyCartActions, speakText]
+  );
+
+  const confirmOrder = useCallback(
+    async (notes?: string): Promise<OrderConfirmationResult> => {
+      setIsLoading(true);
+      try {
+        const currentCart = getCart();
+        const response = await apiRequest<OrderConfirmationResult>("/assistant/confirm", {
+          method: "POST",
+          body: JSON.stringify({
+            customer_note: notes || "Placed via Kirana AI Assistant",
+            cart_snapshot: currentCart,
+          }),
+        });
+
+        if (response?.order_id) {
+          clearCart();
+          setIsOrderConfirmed(true);
+          setCreatedOrderId(response.order_id);
+
+          const successMsg: AssistantMessage = {
+            id: `confirm-${Date.now()}`,
+            role: "assistant",
+            content: `Badhaai ho! Aapka order #${response.order_number} successfully confirm ho gaya hai aur distributor ke paas submit ho gaya hai. Total Amount: ₹${response.total_amount.toFixed(2)}.`,
+            audio_text: `Aapka order confirm ho gaya hai. Total amount ${Math.round(response.total_amount)} rupaye hai.`,
+            timestamp: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, successMsg]);
+          return response;
+        }
+        throw new Error("Order confirmation failed.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  const updateDraftQuantity = useCallback(
+    async (productId: string, quantity: number, quantityUnit: QuantityUnit) => {
+      try {
+        await apiRequest("/assistant/draft/items", {
+          method: "PATCH",
+          body: JSON.stringify({
+            product_id: productId,
+            quantity,
+            quantity_unit: quantityUnit,
+          }),
+        });
+      } catch {
+        // Fallback gracefully to local cart
+      }
+    },
+    []
+  );
+
+  const removeDraftItem = useCallback(
+    async (productId: string, quantityUnit?: QuantityUnit) => {
+      try {
+        const q = quantityUnit ? `?quantity_unit=${quantityUnit}` : "";
+        await apiRequest(`/assistant/draft/items/${productId}${q}`, {
+          method: "DELETE",
+        });
+      } catch {
+        // Fallback gracefully to local cart
+      }
+    },
+    []
+  );
+
   const resetSession = useCallback(async () => {
     stopSpeaking();
     setIsLoading(true);
@@ -296,7 +488,10 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
       if (data?.messages) {
         setMessages(data.messages);
         setActiveClarification(null);
+        setPendingOptions([]);
         setSuggestedProducts([]);
+        setIsOrderConfirmed(false);
+        setCreatedOrderId(null);
       }
     } catch {
       // Ignored
@@ -323,12 +518,23 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
         messages,
         isLoading,
         isSpeaking,
+        isCoolingDown,
+        lastSpokenText,
+        recentSpokenTexts,
         activeClarification,
+        pendingOptions,
         suggestedProducts,
+        isOrderConfirmed,
+        createdOrderId,
+        clearConfirmation,
         openAssistant,
         closeAssistant,
         setMode,
         sendMessage,
+        scanParchi,
+        confirmOrder,
+        updateDraftQuantity,
+        removeDraftItem,
         resetSession,
         speakText,
         stopSpeaking,

@@ -55,8 +55,10 @@ export function AssistantProductCard({
       {/* Product Image & Stock Badge */}
       <div className="relative flex h-28 w-full items-center justify-center rounded-lg bg-[#F6F5F1] p-2">
         <ProductThumbnail
-          src={product.image_url}
-          alt={product.name}
+          name={product.name}
+          brandName={product.brand_name}
+          category={product.category}
+          imageUrl={product.image_url}
           className="size-full object-contain"
         />
         <div className="absolute top-2 right-2">

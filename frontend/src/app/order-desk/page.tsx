@@ -127,6 +127,7 @@ export default function OrderDeskWorkspacePage() {
   }, []);
 
   useEffect(() => {
+    document.title = "Order Desk Workspace | Orderly";
     loadWorkspaceData();
   }, [loadWorkspaceData]);
 

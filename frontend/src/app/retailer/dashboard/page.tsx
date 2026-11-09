@@ -467,7 +467,7 @@ export default function RetailerDashboardPage() {
         gst_included: product.gst_included ?? false,
         quantity_available: product.quantity_available,
         quantity: 1,
-        quantity_unit,
+        quantity_unit: quantityUnit,
         image_url: product.image_url,
       });
       setAddedProducts((current) => new Set(current).add(product.id));

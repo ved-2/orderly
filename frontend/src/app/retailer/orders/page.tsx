@@ -22,6 +22,11 @@ import {
   FileText,
   Calendar,
   AlertTriangle,
+  ClipboardCheck,
+  MessageCircle,
+  CheckSquare,
+  Minus,
+  Plus,
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
@@ -223,6 +228,73 @@ export default function RetailerOrdersPage() {
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderFeedback, setReorderFeedback] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<"items" | "checklist">("items");
+  const [receivingMap, setReceivingMap] = useState<Record<string, Record<string, number>>>({});
+  const [savedVerification, setSavedVerification] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    document.title = "My Orders & Delivery Checklist | Orderly";
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("orderly_delivery_receiving");
+      if (saved) {
+        setReceivingMap(JSON.parse(saved));
+      }
+      const savedVer = localStorage.getItem("orderly_saved_verifications");
+      if (savedVer) {
+        setSavedVerification(JSON.parse(savedVer));
+      }
+    } catch {}
+  }, []);
+
+  const saveReceivingState = (orderId: string, updated: Record<string, number>) => {
+    setReceivingMap((prev) => {
+      const next = { ...prev, [orderId]: updated };
+      try {
+        localStorage.setItem("orderly_delivery_receiving", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const getLineReceived = (orderId: string, lineKey: string, defaultQty: number) => {
+    return receivingMap[orderId]?.[lineKey] ?? defaultQty;
+  };
+
+  const updateLineReceived = (orderId: string, lineKey: string, delta: number, maxQty: number) => {
+    const current = getLineReceived(orderId, lineKey, maxQty);
+    const nextVal = Math.max(0, current + delta);
+    const orderLines = receivingMap[orderId] || {};
+    saveReceivingState(orderId, { ...orderLines, [lineKey]: nextVal });
+  };
+
+  const markAllLinesFull = (order: RetailerOrder) => {
+    const updated: Record<string, number> = {};
+    order.lines.forEach((l, idx) => {
+      const key = `${l.product_id}-${idx}`;
+      const totalExpected = l.quantity + (Number(l.free_quantity) || 0);
+      updated[key] = totalExpected;
+    });
+    saveReceivingState(order.id, updated);
+  };
+
+  const handleSaveVerification = (orderId: string) => {
+    const nowStr = new Date().toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    setSavedVerification((prev) => {
+      const next = { ...prev, [orderId]: nowStr };
+      try {
+        localStorage.setItem("orderly_saved_verifications", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   /* Fetch orders */
   const fetchOrders = useCallback(async () => {
@@ -392,7 +464,7 @@ export default function RetailerOrdersPage() {
           </div>
 
           {/* Reorder Button */}
-          {isDelivered && (
+          {!isCancelled && (
             <button
               onClick={() => handleReorder(order)}
               disabled={reorderingId === order.id}
@@ -402,7 +474,7 @@ export default function RetailerOrdersPage() {
                 size={14}
                 className={reorderingId === order.id ? "animate-spin" : ""}
               />
-              <span>Reorder Entire Order</span>
+              <span>Repeat Order</span>
             </button>
           )}
         </div>
@@ -483,90 +555,342 @@ export default function RetailerOrdersPage() {
           </div>
         )}
 
-        {/* Product Items Table */}
-        <div className="rounded-[6px] border border-[#E7E6E0] bg-white overflow-hidden shadow-2xs">
-          <div className="bg-[#FAF9F6] px-4 py-2.5 border-b border-[#E7E6E0] flex items-center justify-between text-xs">
-            <span className="font-bold uppercase tracking-wider text-[#969892]">
-              Order Items ({order.lines.length})
-            </span>
-            <span className="font-mono text-[11px] text-[#666864]">
-              {order.lines.reduce((acc, l) => acc + l.quantity, 0)} Total Cases
-            </span>
-          </div>
+        {/* Detail Tabs: Invoice vs Delivery Checklist */}
+        <div className="flex items-center gap-2 border-b border-[#E7E6E0] pb-2">
+          <button
+            type="button"
+            onClick={() => setDetailTab("items")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              detailTab === "items"
+                ? "bg-[#242724] text-white shadow-xs"
+                : "text-[#666864] hover:bg-[#F0EFEA]"
+            }`}
+          >
+            <FileText size={13} />
+            <span>Bill & Invoiced Items</span>
+          </button>
 
-          <div className="divide-y divide-[#F0EFEA]">
-            {order.lines.map((line, idx) => (
-              <div
-                key={`${line.product_id}-${idx}`}
-                className="flex items-center justify-between gap-3 p-3 sm:p-4 text-xs hover:bg-[#FAF9F6] transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <ProductThumbnail
-                    name={line.product_name}
-                    size="sm"
-                    className="w-10 h-10 shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <p className="font-semibold text-[#242724] truncate">
-                      {line.product_name}
-                    </p>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#666864]">
-                      <span className="font-mono text-[#969892]">{line.sku}</span>
-                      <span>·</span>
-                      <span className="font-semibold text-[#242724]">
-                        {line.quantity} {line.quantity_unit}
-                        {line.units_per_case ? ` (${line.units_per_case * line.quantity} pcs)` : ""}
-                      </span>
-                      {Number(line.free_quantity) > 0 && (
-                        <Badge variant="success" className="text-[9px] py-0 px-1.5">
-                          +{line.free_quantity} Free Scheme Bonus
-                        </Badge>
-                      )}
+          <button
+            type="button"
+            onClick={() => setDetailTab("checklist")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+              detailTab === "checklist"
+                ? "bg-[#79565D] text-white shadow-xs"
+                : "text-[#666864] hover:bg-[#F0EFEA]"
+            }`}
+          >
+            <ClipboardCheck size={14} />
+            <span>Delivery Checklist (सामान मिला या बाकी?)</span>
+            {(() => {
+              let totalExp = 0;
+              let totalRec = 0;
+              order.lines.forEach((l, idx) => {
+                const key = `${l.product_id}-${idx}`;
+                const exp = l.quantity + (Number(l.free_quantity) || 0);
+                totalExp += exp;
+                totalRec += getLineReceived(order.id, key, exp);
+              });
+              const diff = totalExp - totalRec;
+              if (diff > 0) {
+                return (
+                  <span className="rounded-full bg-[#8E281F] px-1.5 py-0.2 text-[10px] text-white font-bold ml-1">
+                    {diff} बाकी
+                  </span>
+                );
+              }
+              return (
+                <span className="rounded-full bg-[#205234] px-1.5 py-0.2 text-[10px] text-white font-bold ml-1">
+                  ✓
+                </span>
+              );
+            })()}
+          </button>
+        </div>
+
+        {detailTab === "checklist" ? (
+          /* Delivery Receiving Checklist View */
+          <div className="space-y-4">
+            {(() => {
+              let totalExp = 0;
+              let totalRec = 0;
+              const shortages: { name: string; ordered: number; received: number; short: number; unit: string }[] = [];
+
+              order.lines.forEach((l, idx) => {
+                const key = `${l.product_id}-${idx}`;
+                const exp = l.quantity + (Number(l.free_quantity) || 0);
+                const rec = getLineReceived(order.id, key, exp);
+                totalExp += exp;
+                totalRec += rec;
+                if (rec < exp) {
+                  shortages.push({
+                    name: l.product_name,
+                    ordered: exp,
+                    received: rec,
+                    short: exp - rec,
+                    unit: l.quantity_unit,
+                  });
+                }
+              });
+
+              const isShort = shortages.length > 0;
+              const verifiedAt = savedVerification[order.id];
+
+              const waMsg =
+                `Namaste Orderly Distributor ji, Order #${order.order_number} delivery check me discrepancy mili hai:\n` +
+                shortages
+                  .map(
+                    (s) =>
+                      `• ${s.name}: ${s.short} ${s.unit} बाकी (आया: ${s.received}/${s.ordered})`
+                  )
+                  .join("\n") +
+                `\nKripya balance stock next delivery me send karein.`;
+              const waUrl = `https://wa.me/917612408890?text=${encodeURIComponent(waMsg)}`;
+
+              return (
+                <div className="space-y-3">
+                  {/* Summary Bar */}
+                  <div className="rounded-[6px] border border-[#E7E6E0] bg-[#FAF9F6] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[#242724]">
+                          Inward Stock Verification
+                        </span>
+                        {verifiedAt && (
+                          <span className="rounded bg-[#D7EAD9] px-2 py-0.5 text-[10px] font-bold text-[#1E452B]">
+                            Verified {verifiedAt}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[11px] text-[#666864]">
+                        Ordered: <strong className="text-[#242724]">{totalExp}</strong> items | Received:{" "}
+                        <strong className="text-[#205234]">{totalRec}</strong> items | Remaining/Short:{" "}
+                        <strong className={isShort ? "text-[#8E281F]" : "text-[#205234]"}>
+                          {Math.max(0, totalExp - totalRec)}
+                        </strong>
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => markAllLinesFull(order)}
+                        className="rounded-[4px] border border-[#D5D4CE] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#242724] hover:bg-[#F0EFEA] transition shadow-2xs"
+                      >
+                        Sabhi Samaan Mil Gaya (Mark Full)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveVerification(order.id)}
+                        className="rounded-[4px] bg-[#242724] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3C3F3C] transition shadow-2xs"
+                      >
+                        Save Verification
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Discrepancy Alert & WhatsApp Report */}
+                  {isShort && (
+                    <div className="rounded-[6px] border border-[#EDBCBC] bg-[#FDF5F5] p-3 text-xs text-[#8E281F] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle size={16} className="shrink-0" />
+                        <span>
+                          <strong>Short Delivery:</strong> {shortages.length} items me stock kam mila hai. Distributor ko turant report karein.
+                        </span>
+                      </div>
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-[4px] bg-[#25D366] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#1EBE5D] transition shrink-0 shadow-2xs"
+                      >
+                        <MessageCircle size={14} />
+                        <span>Report Shortage on WhatsApp</span>
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Checklist Table */}
+                  <div className="rounded-[6px] border border-[#E7E6E0] bg-white overflow-hidden shadow-2xs">
+                    <div className="bg-[#FAF9F6] px-4 py-2.5 border-b border-[#E7E6E0] flex items-center justify-between text-xs font-semibold text-[#666864]">
+                      <span>Product & Details</span>
+                      <span>Kitna Aaya / Kitna Baki</span>
+                    </div>
+
+                    <div className="divide-y divide-[#F0EFEA]">
+                      {order.lines.map((line, idx) => {
+                        const key = `${line.product_id}-${idx}`;
+                        const expected = line.quantity + (Number(line.free_quantity) || 0);
+                        const rec = getLineReceived(order.id, key, expected);
+                        const isLineShort = rec < expected;
+                        const isLineZero = rec === 0;
+
+                        return (
+                          <div
+                            key={key}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 text-xs hover:bg-[#FAF9F6] transition"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <ProductThumbnail
+                                name={line.product_name}
+                                size="sm"
+                                className="w-10 h-10 shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <p className="font-semibold text-[#242724] truncate">
+                                  {line.product_name}
+                                </p>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-[#666864]">
+                                  <span className="font-mono text-[#969892]">{line.sku}</span>
+                                  <span>·</span>
+                                  <span>
+                                    Ordered: <strong className="text-[#242724]">{line.quantity} {line.quantity_unit}</strong>
+                                  </span>
+                                  {Number(line.free_quantity) > 0 && (
+                                    <span className="rounded bg-[#D7EAD9] px-1.5 py-0.2 text-[10px] font-bold text-[#1E452B]">
+                                      +{line.free_quantity} Free
+                                    </span>
+                                  )}
+                                  <span>·</span>
+                                  <span className="font-bold text-[#242724]">
+                                    Total Expected: {expected} {line.quantity_unit}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Stepper & Status Badge */}
+                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                              <div className="flex items-center rounded-lg border border-[#D5D4CE] bg-white p-0.5 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => updateLineReceived(order.id, key, -1, expected)}
+                                  className="flex h-7 w-7 items-center justify-center rounded text-[#666864] hover:bg-[#F0EFEA] active:scale-95 transition"
+                                >
+                                  <Minus size={13} />
+                                </button>
+                                <span className="w-9 text-center font-bold text-sm text-[#242724] tabular-nums">
+                                  {rec}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateLineReceived(order.id, key, 1, expected)}
+                                  className="flex h-7 w-7 items-center justify-center rounded text-[#666864] hover:bg-[#F0EFEA] active:scale-95 transition"
+                                >
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+
+                              <div className="min-w-[110px] text-right">
+                                {isLineZero ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#FBF0F0] px-2.5 py-0.5 text-[11px] font-bold text-[#8C2828]">
+                                    बिल्कुल नहीं आया
+                                  </span>
+                                ) : isLineShort ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#FCF6EC] px-2.5 py-0.5 text-[11px] font-bold text-[#7A4E12]">
+                                    ⚠️ {expected - rec} {line.quantity_unit} बाकी
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF6F1] px-2.5 py-0.5 text-[11px] font-bold text-[#205234]">
+                                    <Check size={11} /> पूरा आ गया
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
-
-                <div className="text-right shrink-0 font-mono">
-                  <p className="font-bold text-sm text-[#242724] tabular-nums">
-                    {formatCurrency(Number(line.line_total))}
-                  </p>
-                  <p className="text-[10px] text-[#969892]">
-                    @{formatCurrency(Number(line.unit_price))} / unit
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })()}
           </div>
-
-          {/* Customer Remark Note */}
-          {order.customer_note && (
-            <div className="bg-[#FAF9F6] border-t border-[#E7E6E0] p-3 text-xs text-[#666864]">
-              <strong className="text-[#242724]">Customer Note:</strong> {order.customer_note}
+        ) : (
+          /* Product Items Table (Billed View) */
+          <div className="rounded-[6px] border border-[#E7E6E0] bg-white overflow-hidden shadow-2xs">
+            <div className="bg-[#FAF9F6] px-4 py-2.5 border-b border-[#E7E6E0] flex items-center justify-between text-xs">
+              <span className="font-bold uppercase tracking-wider text-[#969892]">
+                Order Items ({order.lines.length})
+              </span>
+              <span className="font-mono text-[11px] text-[#666864]">
+                {order.lines.reduce((acc, l) => acc + l.quantity, 0)} Total Cases
+              </span>
             </div>
-          )}
 
-          {/* Financial Summary Breakdown */}
-          <div className="bg-[#FAF9F6] border-t border-[#E7E6E0] p-4 space-y-1.5 text-xs font-mono">
-            <div className="flex justify-between text-[#666864]">
-              <span>Subtotal:</span>
-              <span className="tabular-nums">{formatCurrency(Number(order.subtotal))}</span>
+            <div className="divide-y divide-[#F0EFEA]">
+              {order.lines.map((line, idx) => (
+                <div
+                  key={`${line.product_id}-${idx}`}
+                  className="flex items-center justify-between gap-3 p-3 sm:p-4 text-xs hover:bg-[#FAF9F6] transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <ProductThumbnail
+                      name={line.product_name}
+                      size="sm"
+                      className="w-10 h-10 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[#242724] truncate">
+                        {line.product_name}
+                      </p>
+                      <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#666864]">
+                        <span className="font-mono text-[#969892]">{line.sku}</span>
+                        <span>·</span>
+                        <span className="font-semibold text-[#242724]">
+                          {line.quantity} {line.quantity_unit}
+                          {line.units_per_case ? ` (${line.units_per_case * line.quantity} pcs)` : ""}
+                        </span>
+                        {Number(line.free_quantity) > 0 && (
+                          <Badge variant="success" className="text-[9px] py-0 px-1.5">
+                            +{line.free_quantity} Free Scheme Bonus
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0 font-mono">
+                    <p className="font-bold text-sm text-[#242724] tabular-nums">
+                      {formatCurrency(Number(line.line_total))}
+                    </p>
+                    <p className="text-[10px] text-[#969892]">
+                      @{formatCurrency(Number(line.unit_price))} / unit
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
-            {Number(order.discount_amount) > 0 && (
-              <div className="flex justify-between text-[#205234] font-semibold">
-                <span>Scheme Rebate / Discount:</span>
-                <span className="tabular-nums">-{formatCurrency(Number(order.discount_amount))}</span>
+
+            {/* Customer Remark Note */}
+            {order.customer_note && (
+              <div className="bg-[#FAF9F6] border-t border-[#E7E6E0] p-3 text-xs text-[#666864]">
+                <strong className="text-[#242724]">Customer Note:</strong> {order.customer_note}
               </div>
             )}
-            <div className="flex justify-between text-[#666864]">
-              <span>GST & Taxes:</span>
-              <span className="tabular-nums">{formatCurrency(Number(order.tax_amount))}</span>
-            </div>
-            <div className="pt-2 border-t border-[#E7E6E0] flex justify-between text-sm sm:text-base font-bold text-[#242724]">
-              <span className="font-sans">Total Invoiced Amount:</span>
-              <span className="tabular-nums">{formatCurrency(Number(order.total_amount))}</span>
+
+            {/* Financial Summary Breakdown */}
+            <div className="bg-[#FAF9F6] border-t border-[#E7E6E0] p-4 space-y-1.5 text-xs font-mono">
+              <div className="flex justify-between text-[#666864]">
+                <span>Subtotal:</span>
+                <span className="tabular-nums">{formatCurrency(Number(order.subtotal))}</span>
+              </div>
+              {Number(order.discount_amount) > 0 && (
+                <div className="flex justify-between text-[#205234] font-semibold">
+                  <span>Scheme Rebate / Discount:</span>
+                  <span className="tabular-nums">-{formatCurrency(Number(order.discount_amount))}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-[#666864]">
+                <span>GST & Taxes:</span>
+                <span className="tabular-nums">{formatCurrency(Number(order.tax_amount))}</span>
+              </div>
+              <div className="pt-2 border-t border-[#E7E6E0] flex justify-between text-sm sm:text-base font-bold text-[#242724]">
+                <span className="font-sans">Total Invoiced Amount:</span>
+                <span className="tabular-nums">{formatCurrency(Number(order.total_amount))}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };

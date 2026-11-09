@@ -211,8 +211,8 @@ export default function DistributorDashboardPage() {
       {/* Top Header */}
       <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white">
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white transition-colors group-hover:bg-[#79565D]">
               <Building2 size={15} />
             </div>
             <div>
@@ -225,7 +225,7 @@ export default function DistributorDashboardPage() {
                 </span>
               </div>
             </div>
-          </div>
+          </Link>
 
           <div className="flex items-center gap-3">
             <div className="hidden sm:block text-right">
@@ -336,6 +336,19 @@ export default function DistributorDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-[#E7E6E0] bg-white py-4 px-4 sm:px-6 mt-12">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#666864]">
+          <span>© {new Date().getFullYear()} Orderly Distribution OS · Jabalpur FMCG Depot</span>
+          <div className="flex items-center gap-4 text-[11px] font-medium text-[#79565D]">
+            <Link href="/order-desk" className="hover:underline">Order Desk Queue</Link>
+            <Link href="/distributor/tally-export" className="hover:underline">Tally Export</Link>
+            <Link href="/salesman" className="hover:underline">Salesman Beat</Link>
+            <Link href="/" className="hover:underline text-[#242724]">Portal Switcher</Link>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }

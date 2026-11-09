@@ -11,8 +11,10 @@ import {
   RotateCcw,
   Sparkles,
   ShoppingCart,
+  Check,
 } from "lucide-react";
 import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
+import { isAIEcho } from "@/lib/echo-filter";
 import { useAIAssistant } from "@/contexts/ai-assistant-context";
 import { getCartItemCount, getCartSubtotal } from "@/lib/cart";
 
@@ -36,6 +38,9 @@ export function AIAssistantVoiceModal() {
     mode,
     isLoading,
     isSpeaking,
+    isCoolingDown,
+    lastSpokenText,
+    recentSpokenTexts,
     messages,
     closeAssistant,
     setMode,
@@ -54,9 +59,31 @@ export function AIAssistantVoiceModal() {
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const isSpeakingRef = useRef(isSpeaking);
+  const isCoolingDownRef = useRef(isCoolingDown);
+  const isLoadingRef = useRef(isLoading);
+  const recentSpokenTextsRef = useRef(recentSpokenTexts);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    isCoolingDownRef.current = isCoolingDown;
+  }, [isCoolingDown]);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    recentSpokenTextsRef.current = recentSpokenTexts;
+  }, [recentSpokenTexts]);
+
   const recognitionRef = useRef<IWindowSpeechRecognition | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isRecognizingRef = useRef(false);
+  const isDirectSpeakingRef = useRef<boolean>(false);
 
   // Sync cart stats
   useEffect(() => {
@@ -88,10 +115,17 @@ export function AIAssistantVoiceModal() {
       const clean = text.trim();
       if (!clean) return;
 
+      // Anti-Echo Guard: If speech recognition picked up the assistant's own voice
+      // (e.g. "kitna chahiye", "ye upload hai", or words from recent AI speech), drop it immediately.
+      if (isAIEcho(clean, recentSpokenTextsRef.current)) {
+        setLiveTranscript("");
+        return;
+      }
+
       setLiveTranscript("");
       setVoiceStatus("processing");
 
-      // Interrupt any current speech before processing new request
+      // Interrupt any ongoing audio
       stopSpeaking();
 
       await sendMessage(clean);
@@ -126,6 +160,16 @@ export function AIAssistantVoiceModal() {
     };
 
     recognition.onresult = (event: any) => {
+      // Discard immediately if the assistant is speaking, cooling down, or processing
+      if (
+        isSpeakingRef.current ||
+        isCoolingDownRef.current ||
+        isLoadingRef.current
+      ) {
+        setLiveTranscript("");
+        return;
+      }
+
       let interim = "";
       let final = "";
 
@@ -137,30 +181,32 @@ export function AIAssistantVoiceModal() {
         }
       }
 
-      const activeText = final || interim;
-      if (activeText) {
-        setLiveTranscript(activeText);
+      const activeText = (final || interim).trim();
+      if (!activeText) return;
 
-        // Interrupt assistant if retailer speaks while assistant is talking
-        if (isSpeaking) {
-          stopSpeaking();
-        }
-
-        // Reset silence timer
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-
-        // After 1.3 seconds of pause, treat speech as finished and process
-        silenceTimerRef.current = setTimeout(() => {
-          if (activeText.trim()) {
-            handleFinalSpeech(activeText);
-          }
-        }, 1300);
+      // Anti-echo filter: Drop assistant prompts & echoes (e.g. "kitna chahiye", "ye upload hai")
+      if (isAIEcho(activeText, recentSpokenTextsRef.current)) {
+        setLiveTranscript("");
+        return;
       }
+
+      setLiveTranscript(activeText);
+
+      // Reset silence timer
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+      // After 1.2 seconds of silence, treat speech as finished and process
+      silenceTimerRef.current = setTimeout(() => {
+        if (activeText.trim() && !isAIEcho(activeText, recentSpokenTextsRef.current)) {
+          handleFinalSpeech(activeText);
+        } else {
+          setLiveTranscript("");
+        }
+      }, 750);
     };
 
     recognition.onerror = (event: any) => {
-      if (event.error === "no-speech") {
-        // Normal silence, ignore
+      if (event.error === "no-speech" || event.error === "aborted") {
         return;
       }
       if (event.error === "not-allowed") {
@@ -171,8 +217,16 @@ export function AIAssistantVoiceModal() {
 
     recognition.onend = () => {
       isRecognizingRef.current = false;
-      // Restart listening if Voice Mode is active and mic is not muted
-      if (isOpen && mode === "VOICE" && !isMicMuted) {
+      // Restart listening only if Voice Mode is active, mic is not muted, and assistant is NOT speaking/cooling down
+      if (
+        isOpen &&
+        mode === "VOICE" &&
+        !isMicMuted &&
+        !isDirectSpeakingRef.current &&
+        !isSpeakingRef.current &&
+        !isCoolingDownRef.current &&
+        !isLoadingRef.current
+      ) {
         try {
           recognition.start();
         } catch {
@@ -183,19 +237,61 @@ export function AIAssistantVoiceModal() {
 
     recognitionRef.current = recognition;
 
+    const onSpeakingStart = () => {
+      isDirectSpeakingRef.current = true;
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      setLiveTranscript("");
+      try {
+        recognition.abort();
+      } catch {}
+    };
+
+    const onSpeakingEnd = () => {
+      setTimeout(() => {
+        isDirectSpeakingRef.current = false;
+        if (isOpen && mode === "VOICE" && !isMicMuted && !isSpeakingRef.current && !isLoadingRef.current) {
+          try {
+            recognition.start();
+          } catch {}
+        }
+      }, 800);
+    };
+
+    window.addEventListener("orderly-ai-speaking-start", onSpeakingStart);
+    window.addEventListener("orderly-ai-speaking-end", onSpeakingEnd);
+
     return () => {
+      window.removeEventListener("orderly-ai-speaking-start", onSpeakingStart);
+      window.removeEventListener("orderly-ai-speaking-end", onSpeakingEnd);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       try {
-        recognition.stop();
+        recognition.abort();
       } catch {
         // Ignored
       }
     };
-  }, [handleFinalSpeech, isMicMuted, isOpen, isSpeaking, mode, stopSpeaking]);
+  }, [
+    handleFinalSpeech,
+    isCoolingDown,
+    isMicMuted,
+    isOpen,
+    isSpeaking,
+    isLoading,
+    lastSpokenText,
+    mode,
+  ]);
 
-  // Start / Stop recognition when modal opens or mic mute toggles
+  // Pause recognition during speech synthesis and resume after cooldown
   useEffect(() => {
-    if (isOpen && mode === "VOICE" && !isMicMuted) {
+    if (isSpeaking || isCoolingDown || isLoading) {
+      if (recognitionRef.current && isRecognizingRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // Ignored
+        }
+      }
+    } else if (isOpen && mode === "VOICE" && !isMicMuted) {
       if (recognitionRef.current && !isRecognizingRef.current) {
         try {
           recognitionRef.current.start();
@@ -203,16 +299,8 @@ export function AIAssistantVoiceModal() {
           // Ignored
         }
       }
-    } else {
-      if (recognitionRef.current && isRecognizingRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          // Ignored
-        }
-      }
     }
-  }, [isOpen, mode, isMicMuted]);
+  }, [isSpeaking, isCoolingDown, isLoading, isOpen, mode, isMicMuted]);
 
   if (!isOpen || mode !== "VOICE") return null;
 
@@ -297,9 +385,22 @@ export function AIAssistantVoiceModal() {
           {/* Live Transcript / Response Feedback Bubble */}
           <div className="w-full max-w-sm min-h-16 rounded-2xl border border-white/70 bg-white/75 p-3.5 text-center shadow-sm backdrop-blur-md">
             {liveTranscript ? (
-              <p className="text-xs font-medium text-[#242724] italic">
-                "{liveTranscript}"
-              </p>
+              <div>
+                <p className="text-xs font-medium text-[#242724] italic">
+                  "{liveTranscript}"
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+                    handleFinalSpeech(liveTranscript);
+                  }}
+                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#4E8962] px-3.5 py-1 text-xs font-semibold text-white shadow-xs transition-transform hover:scale-105 active:scale-95"
+                >
+                  <Check size={13} />
+                  <span>Done Speaking (Send)</span>
+                </button>
+              </div>
             ) : lastAssistantMsg ? (
               <p className="text-xs text-[#5b4b4d] line-clamp-3">
                 {lastAssistantMsg.audio_text || lastAssistantMsg.content}
@@ -321,7 +422,12 @@ export function AIAssistantVoiceModal() {
           {/* Mic Mute Toggle */}
           <button
             type="button"
-            onClick={() => setIsMicMuted((prev) => !prev)}
+            onClick={() => {
+              if (!isMicMuted && liveTranscript.trim()) {
+                handleFinalSpeech(liveTranscript);
+              }
+              setIsMicMuted((prev) => !prev);
+            }}
             aria-label={isMicMuted ? "Unmute microphone" : "Mute microphone"}
             title={isMicMuted ? "Unmute microphone" : "Mute microphone"}
             className={`flex flex-col items-center gap-1 text-[11px] font-medium transition-colors ${
@@ -365,7 +471,7 @@ export function AIAssistantVoiceModal() {
             <span>{isSpeakerMuted ? "Unmute Audio" : "Mute Audio"}</span>
           </button>
 
-          {/* Switch to Chat Mode (Seamless state preservation!) */}
+          {/* Switch to Chat Mode */}
           <button
             type="button"
             onClick={() => {

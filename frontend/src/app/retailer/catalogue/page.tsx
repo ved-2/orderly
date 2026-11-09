@@ -40,6 +40,7 @@ import {
 
 import { useAuth } from "@/contexts/auth-context";
 import { useAIAssistant } from "@/contexts/ai-assistant-context";
+import { isAIEcho } from "@/lib/echo-filter";
 import { apiRequest } from "@/lib/api";
 import { ProductThumbnail } from "@/components/ui/product-thumbnail";
 import { Badge } from "@/components/ui/badge";
@@ -182,7 +183,46 @@ export default function RetailerCataloguePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
-  const { openAssistant } = useAIAssistant();
+  const {
+    openAssistant,
+    sendMessage,
+    isLoading: isAILoading,
+    isSpeaking: isAISpeaking,
+    isCoolingDown: isAICoolingDown,
+    stopSpeaking,
+    recentSpokenTexts,
+    setMode,
+  } = useAIAssistant();
+
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const speechBufferRef = useRef<string>("");
+  const isDirectSpeakingRef = useRef<boolean>(false);
+  const isSpeakingRef = useRef(false);
+  const isAILoadingRef = useRef(false);
+  const isAICoolingDownRef = useRef(false);
+  const recentSpokenTextsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    document.title = "Catalogue & Live Schemes | Orderly";
+  }, []);
+
+  useEffect(() => {
+    isSpeakingRef.current = isAISpeaking;
+  }, [isAISpeaking]);
+
+  useEffect(() => {
+    isAILoadingRef.current = isAILoading;
+  }, [isAILoading]);
+
+  useEffect(() => {
+    isAICoolingDownRef.current = isAICoolingDown;
+  }, [isAICoolingDown]);
+
+  useEffect(() => {
+    recentSpokenTextsRef.current = recentSpokenTexts;
+  }, [recentSpokenTexts]);
 
   // Search & Filter States
   const initialSearch = searchParams.get("search") || "";
@@ -247,6 +287,135 @@ export default function RetailerCataloguePage() {
       setSelectedCategory(c);
     }
   }, [searchParams]);
+
+  /* Conversational AI Ordering Voice Handler */
+  const handleAIVoiceSubmit = useCallback(
+    async (text: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+
+      if (isAIEcho(clean, recentSpokenTextsRef.current)) {
+        speechBufferRef.current = "";
+        return;
+      }
+
+      speechBufferRef.current = "";
+      stopSpeaking();
+      await sendMessage(clean);
+    },
+    [sendMessage, stopSpeaking]
+  );
+
+  const submitCurrentSpeech = useCallback(() => {
+    const text = speechBufferRef.current.trim();
+    speechBufferRef.current = "";
+    if (text) {
+      handleAIVoiceSubmit(text);
+    }
+  }, [handleAIVoiceSubmit]);
+
+  useEffect(() => {
+    if (!voicePanelOpen || !microphoneEnabled) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    const SpeechRec =
+      (window as any).webkitSpeechRecognition ||
+      (window as any).SpeechRecognition;
+    if (!SpeechRec) {
+      return;
+    }
+
+    const rec = new SpeechRec();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "hi-IN";
+
+    rec.onresult = (event: any) => {
+      if (isSpeakingRef.current || isAICoolingDownRef.current || isAILoadingRef.current) {
+        return;
+      }
+
+      let activeText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        activeText += event.results[i][0].transcript;
+      }
+
+      const trimmed = activeText.trim();
+      if (!trimmed) return;
+      speechBufferRef.current = trimmed;
+    };
+
+    rec.onerror = (e: any) => {
+      // Silently ignore aborted and no-speech events so UI never breaks
+      if (e.error !== "no-speech" && e.error !== "aborted") {
+        console.warn("Speech recognition error:", e.error);
+      }
+    };
+
+    rec.onend = () => {
+      if (
+        voicePanelOpen &&
+        microphoneEnabled &&
+        !isDirectSpeakingRef.current &&
+        !isSpeakingRef.current &&
+        !isAICoolingDownRef.current &&
+        !isAILoadingRef.current
+      ) {
+        try {
+          rec.start();
+        } catch {}
+      }
+    };
+
+    recognitionRef.current = rec;
+
+    const onSpeakingStart = () => {
+      isDirectSpeakingRef.current = true;
+      speechBufferRef.current = "";
+      try {
+        rec.abort();
+      } catch {}
+    };
+
+    const onSpeakingEnd = () => {
+      setTimeout(() => {
+        isDirectSpeakingRef.current = false;
+        if (
+          voicePanelOpen &&
+          microphoneEnabled &&
+          !isSpeakingRef.current &&
+          !isAILoadingRef.current
+        ) {
+          try {
+            rec.start();
+          } catch {}
+        }
+      }, 800);
+    };
+
+    window.addEventListener("orderly-ai-speaking-start", onSpeakingStart);
+    window.addEventListener("orderly-ai-speaking-end", onSpeakingEnd);
+
+    try {
+      rec.start();
+    } catch {}
+
+    return () => {
+      window.removeEventListener("orderly-ai-speaking-start", onSpeakingStart);
+      window.removeEventListener("orderly-ai-speaking-end", onSpeakingEnd);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      try {
+        rec.abort();
+      } catch {}
+    };
+  }, [voicePanelOpen, microphoneEnabled, handleAIVoiceSubmit]);
 
   /* ---------------------------------------------------------------- */
   /*  Data Fetching                                                    */
@@ -601,8 +770,8 @@ export default function RetailerCataloguePage() {
   function openVoicePanel(event: ReactMouseEvent<HTMLButtonElement>) {
     if (!voicePanelOpen) {
       const bounds = event.currentTarget.getBoundingClientRect();
-      const panelWidth = Math.min(320, window.innerWidth - 24);
-      const panelHeight = 210;
+      const panelWidth = Math.min(360, window.innerWidth - 24);
+      const panelHeight = 80;
       const x = Math.max(12, Math.min(bounds.right - panelWidth, window.innerWidth - panelWidth - 12));
       const below = bounds.bottom + 10;
       const y = below + panelHeight <= window.innerHeight - 12
@@ -610,7 +779,9 @@ export default function RetailerCataloguePage() {
         : Math.max(12, bounds.top - panelHeight - 10);
       setVoicePanelPosition({ x, y });
     }
+    setMode("VOICE");
     setVoicePanelOpen(true);
+    setMicrophoneEnabled(true);
   }
 
   function handleVoicePanelDragStart(event: ReactPointerEvent<HTMLDivElement>) {
@@ -651,10 +822,18 @@ export default function RetailerCataloguePage() {
   }
 
   function closeVoicePanel() {
+    stopSpeaking();
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+    }
     setMicrophoneEnabled(false);
     setVoicePanelOpen(false);
     setVoiceEndConfirmOpen(false);
     setVoiceError("");
+    setLiveTranscript("");
+    setMode("CHAT");
   }
 
   function endVoiceConversation() {
@@ -969,7 +1148,14 @@ export default function RetailerCataloguePage() {
 
             <button
               type="button"
-              onClick={() => openAssistant("VOICE")}
+              onClick={(e) => {
+                if (voicePanelOpen) {
+                  closeVoicePanel();
+                } else {
+                  openVoicePanel(e);
+                  setMicrophoneEnabled(true);
+                }
+              }}
               aria-label="Open voice search controls"
               aria-expanded={voicePanelOpen}
               className="relative flex size-11 items-center justify-center overflow-hidden rounded-full border border-[#E7E6E0] bg-white p-0.5 shadow-2xs transition-colors hover:border-[#79565D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/30"
@@ -991,69 +1177,85 @@ export default function RetailerCataloguePage() {
               <div
                 ref={voicePanelRef}
                 role="dialog"
-                aria-label="Microphone controls"
+                aria-label="AI Voice Ordering Assistant"
                 style={{ left: voicePanelPosition.x, top: voicePanelPosition.y }}
-                className="fixed z-[80] flex w-max max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-3 rounded-full border border-white/65 bg-[rgba(121,86,93,0.2)] px-3 py-2 text-[#32292b] shadow-[0_12px_36px_rgba(61,48,49,0.2)] backdrop-blur-2xl"
+                className="fixed z-[80] flex w-max max-w-[calc(100vw-1.5rem)] items-center gap-2.5 rounded-full border border-white/65 bg-[rgba(121,86,93,0.25)] px-3 py-1.5 text-[#32292b] shadow-[0_12px_36px_rgba(61,48,49,0.2)] backdrop-blur-2xl"
               >
                 <div
                   onPointerDown={handleVoicePanelDragStart}
                   onPointerMove={handleVoicePanelDrag}
                   onPointerUp={handleVoicePanelDragEnd}
                   onPointerCancel={handleVoicePanelDragEnd}
-                  className="flex min-w-0 cursor-grab touch-none items-center gap-2.5 active:cursor-grabbing"
+                  className="flex min-w-0 cursor-grab touch-none items-center gap-2 active:cursor-grabbing"
                 >
                   <span
-                    className={`size-2 shrink-0 rounded-full shadow-sm ${
-                      microphoneEnabled ? "bg-[#4E8962]" : "bg-[#969892]"
+                    className={`size-2.5 shrink-0 rounded-full shadow-xs ${
+                      !microphoneEnabled
+                        ? "bg-[#969892]"
+                        : isAILoading
+                        ? "bg-[#D97706] animate-pulse"
+                        : isAISpeaking
+                        ? "bg-[#2563EB] animate-pulse"
+                        : "bg-[#4E8962] animate-pulse"
                     }`}
                   />
-                  <span className="select-none whitespace-nowrap text-xs font-medium">
-                    {microphoneEnabled ? "Listening" : "Muted"}
+                  <span className="select-none whitespace-nowrap text-xs font-semibold text-[#242724]">
+                    {!microphoneEnabled
+                      ? "Muted"
+                      : isAILoading
+                      ? "Processing..."
+                      : isAISpeaking
+                      ? "Orderly Speaking..."
+                      : "Listening..."}
                   </span>
                 </div>
 
+                {/* Done Speaking Button */}
+                <button
+                  type="button"
+                  onClick={submitCurrentSpeech}
+                  disabled={isAILoading}
+                  aria-label="Done speaking"
+                  title="Done speaking (Send now)"
+                  className="flex shrink-0 items-center gap-1 rounded-full bg-[#4E8962] px-2.5 py-1 text-xs font-semibold text-white shadow-xs transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
+                >
+                  <Check size={13} />
+                  <span>Done</span>
+                </button>
+
+                {/* Mic Mute / Unmute Button (Muting also completes and sends speech) */}
                 <button
                   type="button"
                   onClick={() => {
-                    setVoiceError("");
-                    setMicrophoneEnabled((enabled) => !enabled);
+                    if (microphoneEnabled) {
+                      submitCurrentSpeech();
+                      setMicrophoneEnabled(false);
+                    } else {
+                      speechBufferRef.current = "";
+                      setMicrophoneEnabled(true);
+                    }
                   }}
-                  aria-label={microphoneEnabled ? "Mute microphone" : "Unmute microphone"}
-                  title={microphoneEnabled ? "Mute microphone" : "Unmute microphone"}
-                  className={`grid size-10 shrink-0 place-items-center rounded-full border border-white/70 shadow-sm backdrop-blur-lg transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40 ${
+                  aria-label={microphoneEnabled ? "Mute and send" : "Unmute microphone"}
+                  title={microphoneEnabled ? "Mute microphone (Send)" : "Unmute microphone"}
+                  className={`grid size-9 shrink-0 place-items-center rounded-full border border-white/70 shadow-xs backdrop-blur-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40 ${
                     microphoneEnabled
-                      ? "bg-[#79565D]/80 text-white"
-                      : "bg-white/55 text-[#3d3031] hover:bg-white/75"
+                      ? "bg-[#79565D] text-white"
+                      : "bg-white/70 text-[#3d3031] hover:bg-white/90"
                   }`}
                 >
-                  {microphoneEnabled ? <MicOff size={17} /> : <Mic size={17} />}
+                  {microphoneEnabled ? <MicOff size={16} /> : <Mic size={16} />}
                 </button>
+
+                {/* Close Button */}
                 <button
                   type="button"
-                  onClick={() => {
-                    closeVoicePanel();
-                    openAssistant("CHAT");
-                  }}
-                  aria-label="Switch to Chat Mode"
-                  title="Switch to Chat Mode"
-                  className="grid size-10 shrink-0 place-items-center rounded-full border border-white/70 bg-white/55 text-[#5b4b4d] shadow-sm backdrop-blur-lg transition hover:scale-105 hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40"
+                  onClick={closeVoicePanel}
+                  aria-label="Close voice conversation"
+                  title="Close"
+                  className="grid size-9 shrink-0 place-items-center rounded-full border border-white/70 bg-white/70 text-[#5b4b4d] shadow-xs backdrop-blur-lg transition-transform hover:scale-105 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40"
                 >
-                  <Bot size={17} />
+                  <X size={16} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setVoiceEndConfirmOpen(true)}
-                  aria-label="End voice conversation"
-                  title="End conversation"
-                  className="grid size-10 shrink-0 place-items-center rounded-full border border-white/70 bg-white/55 text-[#5b4b4d] shadow-sm backdrop-blur-lg transition hover:scale-105 hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#79565D]/40"
-                >
-                  <X size={17} />
-                </button>
-                {voiceError && (
-                  <p role="alert" className="basis-full px-1 text-center text-xs text-[#8C2828]">
-                    {voiceError}
-                  </p>
-                )}
               </div>
             )}
           </div>

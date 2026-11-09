@@ -18,7 +18,7 @@ from app.modules.inventory.models import (
     Inventory,
     InventoryTransaction,
 )
-from app.modules.products.models import Product
+from app.modules.products.models import Brand, Product
 from app.modules.orders.models import (
     Order,
     OrderItem,
@@ -513,6 +513,250 @@ def get_pending_orders(
         "total": total,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/desk/van-loading-sheet")
+def get_van_loading_sheet(
+    status_filter: str = Query(default="APPROVED", alias="status"),
+    city: str | None = Query(default=None),
+    delivery_date: str | None = Query(default=None),
+    format_type: str = Query(default="json", alias="format"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("DISTRIBUTOR_ADMIN", "ORDER_DESK")
+    ),
+):
+    """
+    Consolidated Van Loading Sheet / Warehouse Dispatch Picklist.
+    Aggregates all approved orders across routes/cities into total cases & loose pieces per SKU.
+    Used by delivery van drivers and warehouse packing staff to load tempo/vans.
+    """
+    query = select(Order).join(Retailer, Retailer.id == Order.retailer_id)
+    if status_filter.upper() == "ALL":
+        query = query.where(Order.status.in_(["APPROVED", "SUBMITTED", "UNDER_REVIEW"]))
+    else:
+        query = query.where(Order.status == status_filter.upper())
+
+    if city and city.strip():
+        query = query.where(func.lower(Retailer.city) == city.strip().lower())
+
+    if delivery_date:
+        try:
+            target_date = datetime.fromisoformat(delivery_date).date()
+            query = query.where(
+                or_(
+                    func.date(Order.approved_at) == target_date,
+                    func.date(Order.created_at) == target_date,
+                )
+            )
+        except ValueError:
+            pass
+
+    orders = db.scalars(query.order_by(Order.approved_at.asc(), Order.created_at.asc())).all()
+
+    if not orders:
+        if format_type.lower() == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["No orders found matching the filter criteria."])
+            output.seek(0)
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=van_loading_empty.csv"},
+            )
+        return {
+            "summary": {
+                "total_orders": 0,
+                "total_retailers": 0,
+                "total_cases": 0,
+                "total_pieces": 0,
+                "total_amount": 0.0,
+                "cities_covered": [],
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "items": [],
+            "retailers": [],
+        }
+
+    order_ids = [o.id for o in orders]
+    retailer_ids = list({o.retailer_id for o in orders})
+
+    retailers = db.scalars(select(Retailer).where(Retailer.id.in_(retailer_ids))).all()
+    retailer_map = {r.id: r for r in retailers}
+
+    items_stmt = (
+        select(OrderItem, Product, Brand.name.label("brand_name"))
+        .join(Product, Product.id == OrderItem.product_id)
+        .outerjoin(Brand, Brand.id == Product.brand_id)
+        .where(OrderItem.order_id.in_(order_ids))
+    )
+    order_items_rows = db.execute(items_stmt).all()
+
+    # Aggregate by Product SKU
+    sku_agg: dict[UUID, dict] = {}
+    for line, prod, brand_name in order_items_rows:
+        pid = prod.id
+        if pid not in sku_agg:
+            sku_agg[pid] = {
+                "product_id": str(prod.id),
+                "sku": prod.sku,
+                "product_name": prod.name,
+                "brand_name": brand_name or "General",
+                "category": prod.category,
+                "pack_size": str(prod.pack_size) if prod.pack_size else "",
+                "pack_unit": prod.pack_unit or "",
+                "units_per_case": prod.units_per_case or 1,
+                "total_cases_billed": 0,
+                "total_cases_free": 0,
+                "total_pieces_billed": 0,
+                "total_pieces_free": 0,
+                "retailer_ids": set(),
+            }
+
+        rec = sku_agg[pid]
+        parent_order = next((o for o in orders if o.id == line.order_id), None)
+        if parent_order:
+            rec["retailer_ids"].add(parent_order.retailer_id)
+
+        if line.quantity_unit == "CASE":
+            rec["total_cases_billed"] += int(line.quantity)
+            rec["total_cases_free"] += int(line.free_quantity or 0)
+        else:
+            rec["total_pieces_billed"] += int(line.quantity)
+            rec["total_pieces_free"] += int(line.free_quantity or 0)
+
+    consolidated_items = []
+    total_cases_all = 0
+    total_pieces_all = 0
+
+    for pid, data in sku_agg.items():
+        total_cases = data["total_cases_billed"] + data["total_cases_free"]
+        total_pieces = data["total_pieces_billed"] + data["total_pieces_free"]
+        upc = data["units_per_case"] or 1
+        equiv_cases = round(total_cases + (total_pieces / upc), 2)
+        total_cases_all += total_cases
+        total_pieces_all += total_pieces
+
+        consolidated_items.append({
+            "product_id": data["product_id"],
+            "sku": data["sku"],
+            "product_name": data["product_name"],
+            "brand_name": data["brand_name"],
+            "category": data["category"],
+            "pack_size": f"{data['pack_size']} {data['pack_unit']}".strip(),
+            "units_per_case": data["units_per_case"],
+            "total_cases_billed": data["total_cases_billed"],
+            "total_cases_free": data["total_cases_free"],
+            "total_cases": total_cases,
+            "total_pieces_billed": data["total_pieces_billed"],
+            "total_pieces_free": data["total_pieces_free"],
+            "total_pieces": total_pieces,
+            "equivalent_cases": equiv_cases,
+            "retailers_count": len(data["retailer_ids"]),
+        })
+
+    consolidated_items.sort(key=lambda x: (x["category"], x["product_name"]))
+
+    retailer_summaries = []
+    cities_set = set()
+    total_val = 0.0
+    for o in orders:
+        ret = retailer_map.get(o.retailer_id)
+        if ret:
+            cities_set.add(ret.city)
+            total_val += float(o.total_amount)
+            retailer_summaries.append({
+                "order_id": str(o.id),
+                "order_number": o.order_number,
+                "shop_name": ret.shop_name,
+                "owner_name": ret.owner_name,
+                "phone": ret.phone,
+                "city": ret.city,
+                "address": ret.address,
+                "status": o.status,
+                "total_amount": float(o.total_amount),
+                "approved_at": o.approved_at.isoformat() if o.approved_at else None,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+            })
+
+    if format_type.lower() == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["VAN LOADING SHEET / WAREHOUSE PICKLIST"])
+        writer.writerow(["Generated At", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")])
+        writer.writerow(["Total Orders", len(orders)])
+        writer.writerow(["Total Retailers", len(retailer_ids)])
+        writer.writerow(["Total Cases to Load", total_cases_all])
+        writer.writerow(["Total Loose Pieces", total_pieces_all])
+        writer.writerow([])
+        writer.writerow([
+            "Item SKU",
+            "Category",
+            "Brand",
+            "Product Name",
+            "Pack",
+            "Units/Case",
+            "Cases (Billed)",
+            "Cases (Free)",
+            "Total Cases",
+            "Loose Pcs (Billed)",
+            "Loose Pcs (Free)",
+            "Total Loose Pcs",
+            "Eq. Cases",
+            "Shops Count",
+        ])
+        for it in consolidated_items:
+            writer.writerow([
+                it["sku"],
+                it["category"],
+                it["brand_name"],
+                it["product_name"],
+                it["pack_size"],
+                it["units_per_case"],
+                it["total_cases_billed"],
+                it["total_cases_free"],
+                it["total_cases"],
+                it["total_pieces_billed"],
+                it["total_pieces_free"],
+                it["total_pieces"],
+                it["equivalent_cases"],
+                it["retailers_count"],
+            ])
+        writer.writerow([])
+        writer.writerow(["DELIVERY DROPS / RETAILER ROUTE LIST"])
+        writer.writerow(["Order Number", "Shop Name", "Owner Name", "Phone", "City", "Address", "Order Total (Rs)"])
+        for ret in retailer_summaries:
+            writer.writerow([
+                ret["order_number"],
+                ret["shop_name"],
+                ret["owner_name"],
+                ret["phone"],
+                ret["city"],
+                ret["address"],
+                ret["total_amount"],
+            ])
+        output.seek(0)
+        today_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=van_loading_sheet_{today_str}.csv"},
+        )
+
+    return {
+        "summary": {
+            "total_orders": len(orders),
+            "total_retailers": len(retailer_ids),
+            "total_cases": total_cases_all,
+            "total_pieces": total_pieces_all,
+            "total_amount": round(total_val, 2),
+            "cities_covered": sorted(list(cities_set)),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        "items": consolidated_items,
+        "retailers": retailer_summaries,
     }
 
 

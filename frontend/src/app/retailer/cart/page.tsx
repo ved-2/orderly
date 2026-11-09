@@ -37,6 +37,7 @@ export default function RetailerCartPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    document.title = "Cart & Order Review | Orderly";
     setItems(getCart());
     setHydrated(true);
 

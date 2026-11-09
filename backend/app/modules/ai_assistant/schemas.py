@@ -36,6 +36,25 @@ class MatchStatus(str, Enum):
     NOT_FOUND = "NOT_FOUND"
 
 
+class AttributeStatus(str, Enum):
+    KNOWN = "KNOWN"
+    UNKNOWN = "UNKNOWN"
+    AMBIGUOUS = "AMBIGUOUS"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class ClarificationStage(str, Enum):
+    NEW_REQUEST = "NEW_REQUEST"
+    AWAITING_BRAND = "AWAITING_BRAND"
+    AWAITING_VARIANT = "AWAITING_VARIANT"
+    AWAITING_PACKAGE_SIZE = "AWAITING_PACKAGE_SIZE"
+    AWAITING_SELLING_UNIT = "AWAITING_SELLING_UNIT"
+    AWAITING_QUANTITY = "AWAITING_QUANTITY"
+    PRODUCT_IDENTIFIED = "PRODUCT_IDENTIFIED"
+    ADDED_TO_DRAFT = "ADDED_TO_DRAFT"
+    CANCELLED = "CANCELLED"
+
+
 class ClarificationOption(BaseModel):
     product_id: str
     sku: str
@@ -47,6 +66,32 @@ class ClarificationOption(BaseModel):
     price: float | None = None
     is_in_stock: bool = True
     quantity_available: int = 0
+
+
+class PendingProductRequest(BaseModel):
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    raw_query: str = ""
+    category: str | None = None
+    product_name: str | None = None
+    brand_id: str | None = None
+    brand_name: str | None = None
+    variant_id: str | None = None
+    variant_name: str | None = None
+    pack_size: float | None = None
+    pack_unit: str | None = None
+    selling_unit: QuantityUnit | None = None
+    quantity: int | None = None
+    quantity_unit: QuantityUnit | None = None
+    confirmed_product_id: str | None = None
+    stage: ClarificationStage = ClarificationStage.NEW_REQUEST
+    brand_status: AttributeStatus = AttributeStatus.UNKNOWN
+    variant_status: AttributeStatus = AttributeStatus.UNKNOWN
+    pack_size_status: AttributeStatus = AttributeStatus.UNKNOWN
+    selling_unit_status: AttributeStatus = AttributeStatus.UNKNOWN
+    quantity_status: AttributeStatus = AttributeStatus.UNKNOWN
+    candidate_product_ids: list[str] = Field(default_factory=list)
+    active_question: str | None = None
+    active_options: list[ClarificationOption] = Field(default_factory=list)
 
 
 class ProductCardInfo(BaseModel):
@@ -131,6 +176,8 @@ class AssistantSessionState(BaseModel):
     draft_items: list[ExtractedOrderItem] = Field(default_factory=list)
     pending_question: str | None = None
     pending_options: list[ClarificationOption] = Field(default_factory=list)
+    pending_request: PendingProductRequest | None = None
+    pending_items_queue: list[Any] = Field(default_factory=list)
     is_confirmed: bool = False
     created_order_id: str | None = None
     last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -154,12 +201,15 @@ class AssistantChatResponse(BaseModel):
     is_order_confirmed: bool = False
     created_order_id: str | None = None
     pending_clarification: str | None = None
+    pending_request: PendingProductRequest | None = None
 
 
 class GroqExtractedItem(BaseModel):
     product_phrase: str
     quantity: int = 1
     quantity_unit: QuantityUnit = QuantityUnit.PIECE
+    quantity_explicit: bool = False
+    quantity_unit_explicit: bool = False
     pack_size_hint: float | None = None
     pack_unit_hint: str | None = None
 
@@ -168,6 +218,34 @@ class GroqNLUOutput(BaseModel):
     intent: AssistantIntent
     items: list[GroqExtractedItem] = Field(default_factory=list)
     target_product_to_modify: str | None = None
-    clarification_choice: str | None = None
+    clarification_choice: Any | None = None
     chat_reply: str
     audio_reply: str
+
+
+class DraftItemInput(BaseModel):
+    product_id: str
+    quantity: int = Field(default=1, ge=1)
+    quantity_unit: QuantityUnit = QuantityUnit.PIECE
+
+
+class DraftResponse(BaseModel):
+    items: list[ExtractedOrderItem] = Field(default_factory=list)
+    item_count: int = 0
+    subtotal: float = 0.0
+    currency: str = "INR"
+
+
+class OrderConfirmRequest(BaseModel):
+    customer_note: str | None = None
+    cart_snapshot: list[dict[str, Any]] | None = None
+
+
+class OrderConfirmResponse(BaseModel):
+    order_id: str
+    order_number: str
+    status: str
+    total_amount: float
+    items_count: int
+    message: str
+

@@ -116,6 +116,10 @@ export default function RegisterPage() {
   }
 
   useEffect(() => {
+    document.title = "Sign In & Register | Orderly";
+  }, []);
+
+  useEffect(() => {
     if (loading) return;
     if (user && user.emailVerified) {
       redirectAfterLogin();

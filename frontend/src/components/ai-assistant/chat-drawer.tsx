@@ -180,8 +180,8 @@ export function AIAssistantChatDrawer() {
                 {/* Suggested Product Cards */}
                 {!isUser && msg.suggested_products && msg.suggested_products.length > 0 && (
                   <div className="mt-3 flex w-full gap-3 overflow-x-auto pb-2 pt-1 scrollbar-none">
-                    {msg.suggested_products.map((prod) => (
-                      <AssistantProductCard key={prod.product_id} product={prod} />
+                    {msg.suggested_products.map((prod, pIdx) => (
+                      <AssistantProductCard key={`${prod.product_id}-${pIdx}`} product={prod} />
                     ))}
                   </div>
                 )}

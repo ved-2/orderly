@@ -128,3 +128,106 @@ def test_hybrid_product_matcher_disambiguation_and_exact():
     assert result_sku.status == MatchStatus.MATCHED
     assert result_sku.product_id == str(prod_250.id)
     assert result_sku.quantity_unit == QuantityUnit.CASE
+
+
+def test_conversational_filler_and_vague_demonstrative():
+    req1 = parse_retailer_phrase("i want tea")
+    assert req1.clean_query == "tea"
+    assert req1.quantity == 1
+
+    req2 = parse_retailer_phrase("i said i want this")
+    assert req2.is_demonstrative is True
+    assert req2.clean_query == "this"
+
+    req3 = parse_retailer_phrase("give me 2 packets of tea")
+    assert req3.clean_query == "tea"
+    assert req3.quantity == 2
+    assert req3.quantity_unit == QuantityUnit.PIECE
+
+    req4 = parse_retailer_phrase("give me 1 kg salt")
+    assert req4.clean_query == "salt"
+    assert req4.pack_size_hint == 1000.0
+
+
+def test_vague_request_without_context_prompts_user():
+    mock_db = MagicMock()
+    matcher = HybridProductMatcher(mock_db, uuid.uuid4())
+    pending = matcher.create_pending_product_request("i want this")
+    assert pending.stage.value == "CANCELLED"
+    assert "kaunsa product chahiye" in pending.active_question.lower()
+
+
+def test_typo_tolerance_on_aliases():
+    mock_db = MagicMock()
+    retailer_id = uuid.uuid4()
+    p_biscuit = Product(
+        id=uuid.uuid4(),
+        brand_id=uuid.uuid4(),
+        sku="DD-BISCUIT-001",
+        name="DailyDrop Glucose Biscuits",
+        category="Snacks",
+        pack_size=Decimal("100"),
+        pack_unit="g",
+        units_per_case=48,
+        is_active=True,
+    )
+    p_rice = Product(
+        id=uuid.uuid4(),
+        brand_id=uuid.uuid4(),
+        sku="FF-RICE-001",
+        name="FreshFarm Premium Rice",
+        category="Staples",
+        pack_size=Decimal("5"),
+        pack_unit="kg",
+        units_per_case=4,
+        is_active=True,
+    )
+
+    matcher = HybridProductMatcher.__new__(HybridProductMatcher)
+    matcher.db = mock_db
+    matcher.retailer_id = retailer_id
+    matcher.products = [(p_biscuit, "DailyDrop"), (p_rice, "FreshFarm")]
+    matcher.alias_map = {
+        p_biscuit.id: ["biscuit", "biskt", "glucose biscuits"],
+        p_rice.id: ["rice", "chawal"],
+    }
+    matcher.inventory_map = {p_biscuit.id: 50, p_rice.id: 50}
+    matcher.prices_map = {
+        p_biscuit.id: MagicMock(price=Decimal("20.00"), mrp=Decimal("25.00")),
+        p_rice.id: MagicMock(price=Decimal("400.00"), mrp=Decimal("450.00")),
+    }
+
+    # "biskt" matches biscuit alias
+    cands_biskt = matcher.score_candidates("biskt")
+    assert len(cands_biskt) >= 1
+    assert cands_biskt[0][0].sku == "DD-BISCUIT-001"
+
+    # "chawl" typo matches chawal (rice, 91% ratio)
+    cands_chawl = matcher.score_candidates("chawl")
+    assert len(cands_chawl) >= 1
+    assert cands_chawl[0][0].sku == "FF-RICE-001"
+
+
+def test_anti_echo_noise_phrases_do_not_match_products():
+    mock_db = MagicMock()
+    from app.modules.ai_assistant.schemas import ClarificationStage
+    matcher = HybridProductMatcher(mock_db, uuid.uuid4())
+
+    # Assistant prompts picked up by mic should have empty clean queries
+    parsed1 = parse_retailer_phrase("kitna chahiye ye upload hai")
+    assert parsed1.clean_query == ""
+
+    parsed2 = parse_retailer_phrase("vho upload hai")
+    assert parsed2.clean_query == ""
+
+    parsed3 = parse_retailer_phrase("kitne packet chahiye uplabdh hai")
+    assert parsed3.clean_query == ""
+
+    # Should not produce candidate products
+    assert matcher.score_candidates(parsed1.clean_query) == []
+    assert matcher.score_candidates(parsed2.clean_query) == []
+
+    # create_pending_product_request should cancel and ask for product name, not hallucinate products
+    pending = matcher.create_pending_product_request("kitna chahiye ye upload hai")
+    assert pending.stage == ClarificationStage.CANCELLED
+    assert "kaunsa product chahiye" in pending.active_question.lower()

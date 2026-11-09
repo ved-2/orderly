@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8E676F"/>
+      <stop offset="100%" stop-color="#604147"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded App Icon Background -->
+  <rect width="128" height="128" rx="28" fill="url(#grad)" filter="url(#shadow)"/>
+
+  <!-- Inner Wholesale Box & "O" Logo Mark -->
+  <rect x="24" y="32" width="80" height="66" rx="12" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-width="4"/>
+  
+  <!-- Box Top Flap Detail -->
+  <path d="M26 50 L102 50" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-dasharray="6 4" opacity="0.6"/>
+
+  <!-- Central "O" Accent Monogram -->
+  <circle cx="64" cy="65" r="20" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="73" cy="56" r="3.5" fill="#E8B991"/>
+</svg>

@@ -49,12 +49,12 @@ export function ProductThumbnail({
     );
   }
 
-  const initials = name
+  const initials = (name || "Product")
     .split(" ")
     .slice(0, 2)
-    .map((w) => w[0])
+    .map((w) => w[0] || "")
     .join("")
-    .toUpperCase();
+    .toUpperCase() || "P";
 
   return (
     <div

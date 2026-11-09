@@ -61,8 +61,8 @@ export default function Home() {
       {/* Top Header */}
       <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <span className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white">
+          <Link href="/" className="flex items-center gap-3 group">
+            <span className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white transition-colors group-hover:bg-[#79565D]">
               <Store size={15} />
             </span>
             <div className="flex items-baseline gap-1.5">
@@ -73,7 +73,7 @@ export default function Home() {
                 Jabalpur FMCG Depot
               </span>
             </div>
-          </div>
+          </Link>
 
           <div className="flex items-center gap-3">
             <Link
@@ -250,10 +250,33 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#E7E6E0] bg-white py-4 px-4 sm:px-6">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#969892]">
-          <span>Orderlyy FMCG Commerce Engine · Jabalpur Operations</span>
-          <span>Single-Distributor Deployment · Multi-Tenant Ready</span>
+      <footer className="border-t border-[#E7E6E0] bg-white py-6 px-4 sm:px-6">
+        <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-[#666864]">
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 text-center sm:text-left">
+            <span className="font-semibold text-[#242724]">
+              © {new Date().getFullYear()} Orderly Commerce Engine
+            </span>
+            <span className="hidden sm:inline text-[#D5D3CB]">·</span>
+            <span>Jabalpur Operations & B2B Depot OS</span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] font-medium text-[#79565D]">
+            <Link href="/retailer/catalogue" className="hover:underline">
+              Kirana Catalogue
+            </Link>
+            <Link href="/order-desk" className="hover:underline">
+              Order Desk
+            </Link>
+            <Link href="/salesman" className="hover:underline">
+              Salesman Beat
+            </Link>
+            <Link href="/distributor" className="hover:underline">
+              Distributor Portal
+            </Link>
+            <a href="tel:+917612408890" className="hover:underline text-[#242724] font-semibold">
+              Helpline: +91 761 240 8890
+            </a>
+          </div>
         </div>
       </footer>
     </div>
