@@ -275,7 +275,7 @@ function OrderDeskShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen w-full bg-[#F6F5F1] text-[#242724]">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#E7E6E0] bg-white/95 backdrop-blur-md">
+      <header className="fixed top-0 left-0 right-0 z-40 h-14 border-b border-[#E7E6E0] bg-white/95 backdrop-blur-md">
         <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
           {/* Brand Mark & Depot Identity */}
           <div className="flex items-center gap-3">
@@ -335,9 +335,9 @@ function OrderDeskShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Main Container */}
-      <div className="flex min-h-[calc(100vh-56px)] w-full">
+      <div className="flex min-h-screen w-full pt-14">
         {/* Desktop Left Sidebar */}
-        <aside className="hidden w-60 shrink-0 border-r border-[#E7E6E0] bg-white p-3.5 md:flex flex-col justify-between sticky top-14 h-[calc(100vh-56px)] overflow-y-auto">
+        <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-60 z-30 flex-col justify-between border-r border-[#E7E6E0] bg-white p-3.5 overflow-y-auto">
           <div>
             <div className="flex items-center justify-between px-2 mb-2.5">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[#969892]">
@@ -418,7 +418,7 @@ function OrderDeskShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Dynamic Route Content */}
-        <main className="min-w-0 flex-1 pb-24 md:pb-8">{children}</main>
+        <main className="min-w-0 flex-1 md:pl-60 pb-24 md:pb-8">{children}</main>
       </div>
 
       {/* Mobile Bottom Navigation Bar */}

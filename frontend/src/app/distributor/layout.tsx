@@ -216,7 +216,7 @@ export default function DistributorLayout({
   return (
     <div className="min-h-screen w-full bg-[#F6F5F1] text-[#242724] flex flex-col">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-[#E7E6E0] bg-white/95 backdrop-blur-md">
+      <header className="fixed top-0 left-0 right-0 z-40 h-14 border-b border-[#E7E6E0] bg-white/95 backdrop-blur-md">
         <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             {/* Mobile Drawer Button */}
@@ -265,9 +265,9 @@ export default function DistributorLayout({
       </header>
 
       {/* Main Body with Sidebar + Content */}
-      <div className="flex-1 flex w-full">
+      <div className="flex-1 flex w-full pt-14">
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex w-64 flex-col border-r border-[#E7E6E0] bg-white shrink-0 p-4 justify-between">
+        <aside className="hidden lg:flex fixed top-14 left-0 bottom-0 w-64 z-30 flex-col border-r border-[#E7E6E0] bg-white p-4 justify-between overflow-y-auto">
           <div className="space-y-6">
             {/* Primary Navigation */}
             <div>
@@ -465,7 +465,7 @@ export default function DistributorLayout({
         )}
 
         {/* Page Content */}
-        <main className="flex-1 min-w-0 bg-[#F6F5F1] overflow-y-auto">
+        <main className="flex-1 min-w-0 lg:pl-64 bg-[#F6F5F1]">
           {children}
         </main>
       </div>

@@ -634,9 +634,9 @@ export default function SalesmanPortalPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F6F5F1] text-[#242724] pb-28">
+    <div className="min-h-screen bg-[#F6F5F1] text-[#242724] pt-14 pb-28">
       {/* 1. Ultra-Clean Top Bar */}
-      <header className="sticky top-0 z-40 border-b border-[#E7E6E0] bg-white px-4 py-2.5 shadow-2xs">
+      <header className="fixed top-0 left-0 right-0 z-40 h-14 border-b border-[#E7E6E0] bg-white/95 backdrop-blur-md px-4 py-2.5 shadow-xs flex items-center">
         <div className="mx-auto max-w-4xl flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white">
