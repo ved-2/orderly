@@ -199,7 +199,7 @@ function RetailerLayoutInner({
       <div className={`flex w-full ${isAssistantPage ? "h-[calc(100dvh-56px)] overflow-hidden" : "min-h-[calc(100vh-56px)]"}`}>
 
         {/* Desktop Sidebar */}
-        <aside className="hidden w-56 shrink-0 border-r border-[#E7E6E0] bg-[#FFFFFF] p-4 md:flex flex-col justify-between sticky top-14 h-[calc(100vh-56px)] overflow-y-auto">
+        <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-60 z-30 flex-col justify-between border-r border-[#E7E6E0] bg-[#FFFFFF] p-4 overflow-y-auto">
           {/* Main Nav Items */}
           <div>
             <p className="mb-3 px-3 text-[10px] font-medium uppercase tracking-widest text-[#969892]">
@@ -256,7 +256,7 @@ function RetailerLayoutInner({
         </aside>
 
         {/* Dynamic Route Content */}
-        <main className={`min-w-0 flex-1 ${isAssistantPage ? "flex flex-col h-full min-h-0 overflow-hidden pb-[4.5rem] md:pb-0" : "pb-24 md:pb-8"}`}>{children}</main>
+        <main className={`min-w-0 flex-1 md:pl-60 ${isAssistantPage ? "flex flex-col h-full min-h-0 overflow-hidden pb-[4.5rem] md:pb-0" : "pb-24 md:pb-8"}`}>{children}</main>
       </div>
 
       {/* Global AI Assistant Chat Drawer & Voice Modal */}
