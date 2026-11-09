@@ -30,6 +30,31 @@ CATALOGUE = [
     ("SpiceRoute", "SPICEROUTE", "SR-CUMIN-001", "SpiceRoute Cumin Seeds", "Spices", "100", "g", 60, "0909", "5", "64"),
     ("SpiceRoute", "SPICEROUTE", "SR-GARAM-001", "SpiceRoute Garam Masala", "Spices", "100", "g", 60, "0910", "5", "88"),
     ("SpiceRoute", "SPICEROUTE", "SR-CORIANDER-001", "SpiceRoute Coriander Powder", "Spices", "200", "g", 48, "0909", "5", "62"),
+
+    # Tea - multiple companies, blends, and pack sizes for realistic FMCG ordering.
+    ("RedLeaf", "REDLEAF", "RL-TEA-001", "RedLeaf Strong Assam Tea", "Beverages", "250", "g", 40, "0902", "5", "132"),
+    ("RedLeaf", "REDLEAF", "RL-TEA-002", "RedLeaf Strong Assam Tea", "Beverages", "500", "g", 24, "0902", "5", "248"),
+    ("ChaiBrew", "CHAIBREW", "CB-TEA-001", "ChaiBrew Premium Leaf Tea", "Beverages", "250", "g", 40, "0902", "5", "145"),
+    ("ChaiBrew", "CHAIBREW", "CB-TEA-002", "ChaiBrew Premium Leaf Tea", "Beverages", "1", "kg", 12, "0902", "5", "520"),
+    ("MountainCup", "MOUNTAINCUP", "MC-TEA-001", "MountainCup Darjeeling Tea", "Beverages", "100", "g", 60, "0902", "5", "92"),
+    ("MountainCup", "MOUNTAINCUP", "MC-TEA-002", "MountainCup Darjeeling Tea", "Beverages", "250", "g", 40, "0902", "5", "205"),
+    ("TeaGarden", "TEAGARDEN", "TG-TEA-001", "TeaGarden Ginger Masala Tea", "Beverages", "100", "g", 60, "0902", "5", "78"),
+    ("TeaGarden", "TEAGARDEN", "TG-TEA-002", "TeaGarden Ginger Masala Tea", "Beverages", "250", "g", 40, "0902", "5", "175"),
+    ("RoyalChai", "ROYALCHAI", "RC-TEA-001", "RoyalChai Cardamom Tea", "Beverages", "100", "g", 60, "0902", "5", "88"),
+    ("RoyalChai", "ROYALCHAI", "RC-TEA-002", "RoyalChai Cardamom Tea", "Beverages", "250", "g", 40, "0902", "5", "198"),
+    ("NilgiriGold", "NILGIRIGOLD", "NG-TEA-001", "NilgiriGold Premium Tea", "Beverages", "250", "g", 40, "0902", "5", "155"),
+    ("NilgiriGold", "NILGIRIGOLD", "NG-TEA-002", "NilgiriGold Premium Tea", "Beverages", "500", "g", 24, "0902", "5", "295"),
+
+    # Additional fast-moving kirana products.
+    ("DailyDrop", "DAILYDROP", "DD-GHEE-001", "DailyDrop Cow Ghee", "Cooking Oil", "1", "L", 12, "0405", "5", "610"),
+    ("DailyDrop", "DAILYDROP", "DD-BESAN-001", "DailyDrop Besan", "Pulses", "500", "g", 24, "1106", "5", "68"),
+    ("SnackJoy", "SNACKJOY", "SJ-BISCUIT-001", "SnackJoy Cream Biscuits", "Snacks", "120", "g", 48, "1905", "18", "30"),
+    ("SnackJoy", "SNACKJOY", "SJ-NAMKEEN-001", "SnackJoy Aloo Bhujia", "Snacks", "200", "g", 36, "1905", "12", "58"),
+    ("QuickBite", "QUICKBITE", "QB-NOODLES-001", "QuickBite Masala Noodles", "Instant Food", "70", "g", 72, "1902", "12", "16"),
+    ("QuickBite", "QUICKBITE", "QB-NOODLES-002", "QuickBite Masala Noodles Family Pack", "Instant Food", "280", "g", 24, "1902", "12", "58"),
+    ("CarePlus", "CAREPLUS", "CP-TOOTHPASTE-001", "CarePlus Fresh Mint Toothpaste", "Personal Care", "100", "g", 72, "3306", "18", "92"),
+    ("CarePlus", "CAREPLUS", "CP-SHAMPOO-001", "CarePlus Daily Care Shampoo", "Personal Care", "180", "ml", 48, "3305", "18", "145"),
+    ("HomeBright", "HOMEBRIGHT", "HB-HANDWASH-001", "HomeBright Hand Wash", "Personal Care", "250", "ml", 48, "3401", "18", "72"),
 ]
 
 
