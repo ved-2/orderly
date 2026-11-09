@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Store,
   Inbox,
@@ -14,31 +13,63 @@ import {
   ShieldCheck,
   TrendingUp,
   Boxes,
-  LogOut,
-  CheckCircle2,
+  Truck,
+  UserX,
+  ExternalLink,
+  DollarSign,
+  ShoppingCart,
+  RefreshCw,
 } from "lucide-react";
 
-import { useAuth } from "@/contexts/auth-context";
 import { apiRequest } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
-interface UserProfile {
-  id: string;
-  email: string;
-  role: string;
-  is_active: boolean;
+interface OverviewMetrics {
+  totalRetailers: number;
+  totalSalesmen: number;
+  totalOrders: number;
+  totalRevenue: number;
+  confirmedRevenue: number;
 }
-
-const ALLOWED_ROLES = new Set(["DISTRIBUTOR_ADMIN"]);
 
 const adminModules = [
   {
-    title: "Kirana Network & Credit",
+    title: "B2B Sales & Revenue Intelligence",
+    description:
+      "Monitor real-time wholesale GMV, breakdown by sales channel (Salesman Beat vs Web vs AI), and top kirana store spenders.",
+    href: "/distributor/sales",
+    badge: "Live Analytics",
+    icon: TrendingUp,
+    accent: "text-[#205234]",
+    accentBg: "bg-[#EEF6F1]",
+  },
+  {
+    title: "Field Salesmen & Beat Operations",
+    description:
+      "Inspect salesmen order productivity, manage assigned kirana store beat territories, and simulate beat visits.",
+    href: "/distributor/salesman",
+    badge: "Field Team",
+    icon: Users,
+    accent: "text-[#79565D]",
+    accentBg: "bg-[#F4EFF0]",
+  },
+  {
+    title: "Kirana Network & Credit Limits",
     description:
       "Verify incoming kirana shop registrations, set credit limits, review outstanding ledgers, and log payment collections.",
     href: "/distributor/retailers",
     badge: "Retailer Roster",
     icon: Store,
+    accent: "text-[#79565D]",
+    accentBg: "bg-[#F4EFF0]",
+  },
+  {
+    title: "Master Catalogue & Trade Schemes",
+    description:
+      "Manage SKU specifications, wholesale case rates, warehouse depot stock, and promotional Buy-X-Get-Y / slab schemes across FMCG brands.",
+    href: "/distributor/catalogue",
+    badge: "Catalogue Engine",
+    icon: Package,
     accent: "text-[#79565D]",
     accentBg: "bg-[#F4EFF0]",
   },
@@ -53,14 +84,34 @@ const adminModules = [
     accentBg: "bg-[#EEF6F1]",
   },
   {
-    title: "Master Catalogue & Schemes",
+    title: "Van Loading Sheet & Picklist",
     description:
-      "Manage SKU specifications, wholesale case rates, warehouse depot stock, and promotional Buy-X-Get-Y / slab schemes across 4 brands.",
-    href: "/distributor/catalogue",
-    badge: "Catalogue Engine",
-    icon: Package,
-    accent: "text-[#79565D]",
-    accentBg: "bg-[#F4EFF0]",
+      "Aggregate approved dispatches into delivery-route picklists and van packing manifests with 1-click CSV download.",
+    href: "/order-desk/van-loading",
+    badge: "Dispatches",
+    icon: Truck,
+    accent: "text-[#1E4B72]",
+    accentBg: "bg-[#EFF5FB]",
+  },
+  {
+    title: "14-Day Dormant Retailers",
+    description:
+      "Identify at-risk inactive kiranas with zero orders over 14 days and initiate direct WhatsApp re-engagement outreach.",
+    href: "/order-desk/dormant-retailers",
+    badge: "Retention",
+    icon: UserX,
+    accent: "text-[#8C2828]",
+    accentBg: "bg-[#FBF0F0]",
+  },
+  {
+    title: "Staff & Operator Invitations",
+    description:
+      "Issue single-use invitations for Order Desk operators and beat salesmen with role-based access tokens.",
+    href: "/distributor/staff",
+    badge: "Access Control",
+    icon: ShieldCheck,
+    accent: "text-[#7A4E12]",
+    accentBg: "bg-[#FCF6EC]",
   },
   {
     title: "Tally Voucher Export",
@@ -72,283 +123,212 @@ const adminModules = [
     accent: "text-[#1E4B72]",
     accentBg: "bg-[#EFF5FB]",
   },
-  {
-    title: "Staff & Salesmen Invitations",
-    description:
-      "Issue single-use invitations for Order Desk operators and beat salesmen with role-based access tokens.",
-    href: "/distributor/staff",
-    badge: "Access Control",
-    icon: Users,
-    accent: "text-[#7A4E12]",
-    accentBg: "bg-[#FCF6EC]",
-  },
 ];
 
+function formatCurrency(val: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(val);
+}
+
 export default function DistributorDashboardPage() {
-  const router = useRouter();
-  const { user, loading: authLoading, logout } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<OverviewMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchLiveCounts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [salesMetrics, retailersRes, salesmenRes] = await Promise.all([
+        apiRequest<{
+          total_revenue: number;
+          confirmed_revenue: number;
+          total_orders: number;
+        }>("/distributor/sales/metrics"),
+        apiRequest<{ total: number }>("/distributor/retailers?limit=1"),
+        apiRequest<{ total: number }>("/distributor/salesmen"),
+      ]);
+
+      setMetrics({
+        totalRetailers: retailersRes.total || 0,
+        totalSalesmen: salesmenRes.total || 0,
+        totalOrders: salesMetrics.total_orders || 0,
+        totalRevenue: salesMetrics.total_revenue || 0,
+        confirmedRevenue: salesMetrics.confirmed_revenue || 0,
+      });
+    } catch (err) {
+      console.error("Failed to load distributor overview metrics:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      setProfileLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    async function fetchProfile() {
-      try {
-        setProfileLoading(true);
-        setError(null);
-        const data = await apiRequest<UserProfile>("/auth/me");
-        if (isMounted) setProfile(data);
-      } catch (err) {
-        if (isMounted) {
-          setError(
-            err instanceof Error ? err.message : "Authentication error"
-          );
-        }
-      } finally {
-        if (isMounted) setProfileLoading(false);
-      }
-    }
-
-    fetchProfile();
-    return () => {
-      isMounted = false;
-    };
-  }, [user, authLoading]);
-
-  if (authLoading || profileLoading) {
-    return (
-      <main className="min-h-screen bg-[#F6F5F1] p-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="h-8 w-48 animate-pulse rounded bg-[#E7E6E0]" />
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="h-44 animate-pulse rounded bg-[#E7E6E0]" />
-            <div className="h-44 animate-pulse rounded bg-[#E7E6E0]" />
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!user) {
-    return (
-      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
-        <div className="mx-auto max-w-md w-full rounded-[6px] border border-[#E7E6E0] bg-white p-6 text-center shadow-2xs">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F4EFF0] text-[#79565D]">
-            <Building2 size={22} />
-          </div>
-          <h1 className="mt-4 text-base font-bold text-[#242724]">
-            Distributor Admin Portal
-          </h1>
-          <p className="mt-1 text-xs text-[#666864]">
-            Authorized executive sign-in required.
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/register"
-              className="inline-block rounded-[4px] bg-[#79565D] px-5 py-2.5 text-xs font-semibold text-white"
-            >
-              Sign In
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (error || !profile) {
-    return (
-      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
-        <div className="mx-auto max-w-md w-full rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-6 text-center">
-          <h1 className="text-sm font-bold text-[#8C2828]">Authentication Error</h1>
-          <p className="mt-1 text-xs text-[#8C2828] opacity-80">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 rounded-[4px] bg-[#8C2828] px-4 py-2 text-xs font-semibold text-white"
-          >
-            Retry
-          </button>
-        </div>
-      </main>
-    );
-  }
-
-  if (!ALLOWED_ROLES.has(profile.role)) {
-    return (
-      <main className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
-        <div className="mx-auto max-w-md w-full rounded-[6px] border border-[#EED7B3] bg-[#FCF6EC] p-6 text-center">
-          <h1 className="text-sm font-bold text-[#7A4E12]">Access Restricted</h1>
-          <p className="mt-1 text-xs text-[#7A4E12] opacity-85">
-            This module requires DISTRIBUTOR_ADMIN permissions.
-          </p>
-          <div className="mt-5 flex justify-center gap-3">
-            <Link
-              href="/order-desk"
-              className="rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-semibold text-[#242724]"
-            >
-              Order Desk
-            </Link>
-            <button
-              onClick={() => logout()}
-              className="rounded-[4px] bg-[#242724] px-3 py-1.5 text-xs font-semibold text-white"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
+    document.title = "Distributor Executive Console | Orderly";
+    fetchLiveCounts();
+  }, [fetchLiveCounts]);
 
   return (
-    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="flex h-7 w-7 items-center justify-center rounded-[4px] bg-[#242724] text-white transition-colors group-hover:bg-[#79565D]">
-              <Building2 size={15} />
-            </div>
-            <div>
-              <div className="flex items-baseline gap-2">
-                <span className="font-bold text-sm tracking-tight text-[#242724]">
-                  orderly<span className="text-[#79565D]">.</span>admin
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#969892]">
-                  Jabalpur FMCG Distribution
-                </span>
-              </div>
-            </div>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-8">
+      {/* Welcome Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs uppercase tracking-wider text-[#969892]">
+              Executive Control Center
+            </span>
+            <span className="text-[#E7E6E0]">·</span>
+            <span className="text-xs text-[#205234] font-semibold">
+              {loading
+                ? "Connecting..."
+                : `${metrics?.totalRetailers || 0} Registered Kirana Stores · ${metrics?.totalSalesmen || 0} Active Salesmen`}
+            </span>
+          </div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+            Distributor Management Console
+          </h1>
+          <p className="mt-0.5 text-xs text-[#666864]">
+            Live operational suite for wholesale trade schemes, field salesman beats, kirana credit, and dispatches.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href="/distributor/sales"
+            className="inline-flex items-center gap-2 rounded-[4px] bg-[#205234] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-2xs hover:bg-[#183f28] transition-colors"
+          >
+            <TrendingUp size={14} />
+            <span>Sales Performance</span>
           </Link>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:block text-right">
-              <p className="text-xs font-semibold text-[#242724]">{profile.email}</p>
-              <Badge variant="accent" className="text-[9px]">
-                Distributor Admin
-              </Badge>
-            </div>
-            <button
-              onClick={() => logout()}
-              title="Sign Out"
-              className="flex h-8 w-8 items-center justify-center rounded-[4px] border border-[#E7E6E0] text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724] transition-colors"
-            >
-              <LogOut size={14} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8">
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs uppercase tracking-wider text-[#969892]">
-                Executive Control Center
-              </span>
-              <span className="text-[#E7E6E0]">·</span>
-              <span className="text-xs text-[#666864]">1,800 Retailers · 4 Brands</span>
-            </div>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
-              Distributor Management Console
-            </h1>
-            <p className="mt-0.5 text-xs text-[#666864]">
-              Master control for trade schemes, wholesale catalog, retailer verification, credit limits, and staff.
-            </p>
-          </div>
-
           <Link
-            href="/order-desk/orders"
+            href="/order-desk"
             className="inline-flex items-center gap-2 rounded-[4px] bg-[#79565D] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-2xs hover:bg-[#67474E] transition-colors"
           >
             <Inbox size={14} />
             <span>Open Order Desk</span>
           </Link>
         </div>
+      </div>
 
-        {/* Modules Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-          {adminModules.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="group rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs hover:border-[#79565D] transition-colors flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-[4px] ${item.accentBg} ${item.accent}`}
-                    >
-                      <Icon size={18} />
-                    </div>
-                    <Badge variant="outline" className="text-[10px]">
-                      {item.badge}
-                    </Badge>
-                  </div>
-                  <h2 className="mt-3.5 font-bold text-sm text-[#242724]">
-                    {item.title}
-                  </h2>
-                  <p className="mt-1 text-xs text-[#666864] leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div className="mt-5 pt-3 border-t border-[#F0EFEA] flex items-center justify-between text-xs font-semibold text-[#79565D]">
-                  <span>Manage Module</span>
-                  <ArrowRight
-                    size={14}
-                    className="transition-transform group-hover:translate-x-1"
-                  />
-                </div>
-              </Link>
-            );
-          })}
+      {/* Real Live KPI Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-[#666864]">
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Kirana Network
+            </span>
+            <Store size={15} className="text-[#79565D]" />
+          </div>
+          <p className="mt-2 text-xl sm:text-2xl font-bold text-[#242724]">
+            {loading ? "..." : metrics?.totalRetailers || 0}
+          </p>
+          <p className="mt-0.5 text-[10px] text-[#969892]">Verified accounts</p>
         </div>
 
-        {/* Distributor Governance & Operating Standards */}
-        <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-6 shadow-2xs">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#969892] mb-3">
-            <ShieldCheck size={16} className="text-[#79565D]" />
-            <span>Jabalpur FMCG Operating Governance</span>
+        <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-[#666864]">
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Field Salesmen
+            </span>
+            <Users size={15} className="text-[#79565D]" />
           </div>
-          <div className="grid gap-4 sm:grid-cols-3 text-xs text-[#666864] leading-relaxed">
-            <div className="rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] p-3.5">
-              <p className="font-bold text-[#242724] mb-1">Authenticated Staff Roles</p>
-              <p>Staff and salesmen accounts are issued only via encrypted single-use tokens. Public role signup is strictly disallowed.</p>
-            </div>
-            <div className="rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] p-3.5">
-              <p className="font-bold text-[#242724] mb-1">Credit Limit Risk Bounds</p>
-              <p>All kirana accounts start with ₹0 sanctioned credit. Orders exceeding limits trigger an Order Desk review lock.</p>
-            </div>
-            <div className="rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] p-3.5">
-              <p className="font-bold text-[#242724] mb-1">Daily ERP Export</p>
-              <p>Approved dispatches and invoices map 1:1 with Tally ERP 9 / Tally Prime sales voucher schemas.</p>
-            </div>
+          <p className="mt-2 text-xl sm:text-2xl font-bold text-[#242724]">
+            {loading ? "..." : metrics?.totalSalesmen || 0}
+          </p>
+          <p className="mt-0.5 text-[10px] text-[#969892]">Active beat operators</p>
+        </div>
+
+        <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-[#666864]">
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Wholesale Orders
+            </span>
+            <ShoppingCart size={15} className="text-[#205234]" />
           </div>
+          <p className="mt-2 text-xl sm:text-2xl font-bold text-[#242724]">
+            {loading ? "..." : metrics?.totalOrders || 0}
+          </p>
+          <p className="mt-0.5 text-[10px] text-[#969892]">Booked in database</p>
+        </div>
+
+        <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-4 shadow-2xs">
+          <div className="flex items-center justify-between text-[#666864]">
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              Confirmed GMV
+            </span>
+            <TrendingUp size={15} className="text-[#205234]" />
+          </div>
+          <p className="mt-2 text-xl sm:text-2xl font-bold text-[#205234]">
+            {loading ? "..." : formatCurrency(metrics?.confirmedRevenue || 0)}
+          </p>
+          <p className="mt-0.5 text-[10px] text-[#969892]">Approved & dispatched</p>
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="border-t border-[#E7E6E0] bg-white py-4 px-4 sm:px-6 mt-12">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#666864]">
-          <span>© {new Date().getFullYear()} Orderly Distribution OS · Jabalpur FMCG Depot</span>
-          <div className="flex items-center gap-4 text-[11px] font-medium text-[#79565D]">
-            <Link href="/order-desk" className="hover:underline">Order Desk Queue</Link>
-            <Link href="/distributor/tally-export" className="hover:underline">Tally Export</Link>
-            <Link href="/salesman" className="hover:underline">Salesman Beat</Link>
-            <Link href="/" className="hover:underline text-[#242724]">Portal Switcher</Link>
+      {/* Modules Grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {adminModules.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="group rounded-[6px] border border-[#E7E6E0] bg-white p-5 shadow-2xs hover:border-[#79565D] transition-colors flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <div
+                    className={`flex h-9 w-9 items-center justify-center rounded-[4px] ${item.accentBg} ${item.accent}`}
+                  >
+                    <Icon size={18} />
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">
+                    {item.badge}
+                  </Badge>
+                </div>
+                <h2 className="mt-3.5 font-bold text-sm text-[#242724]">
+                  {item.title}
+                </h2>
+                <p className="mt-1 text-xs text-[#666864] leading-relaxed">
+                  {item.description}
+                </p>
+              </div>
+
+              <div className="mt-5 pt-3 border-t border-[#F0EFEA] flex items-center justify-between text-xs font-semibold text-[#79565D]">
+                <span>Manage Module</span>
+                <ArrowRight
+                  size={14}
+                  className="transition-transform group-hover:translate-x-1"
+                />
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Governance & Standards */}
+      <div className="rounded-[6px] border border-[#E7E6E0] bg-white p-6 shadow-2xs">
+        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#969892] mb-3">
+          <ShieldCheck size={16} className="text-[#79565D]" />
+          <span>Jabalpur FMCG Operating Governance</span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3 text-xs text-[#666864] leading-relaxed">
+          <div className="rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] p-3.5">
+            <p className="font-bold text-[#242724] mb-1">Authenticated Staff Roles</p>
+            <p>Staff and salesmen accounts are issued only via encrypted single-use tokens. Public role signup is strictly disallowed.</p>
+          </div>
+          <div className="rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] p-3.5">
+            <p className="font-bold text-[#242724] mb-1">Credit Limit Risk Bounds</p>
+            <p>All kirana accounts start with sanctioned credit bounds. Orders exceeding limits trigger an Order Desk review lock.</p>
+          </div>
+          <div className="rounded-[4px] border border-[#E7E6E0] bg-[#FAF9F6] p-3.5">
+            <p className="font-bold text-[#242724] mb-1">Daily ERP Export</p>
+            <p>Approved dispatches and invoices map 1:1 with Tally ERP 9 / Tally Prime sales voucher schemas.</p>
           </div>
         </div>
-      </footer>
-    </main>
+      </div>
+    </div>
   );
 }

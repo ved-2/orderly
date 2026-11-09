@@ -407,20 +407,21 @@ def call_gemini_chat_nlu(
 
 
 PARCHI_VISION_SYSTEM_PROMPT = """You are an expert OCR vision system for Orderly, an Indian Kirana wholesale ordering platform.
-The provided image is a handwritten or printed kirana purchase slip / parchi.
-Transcribe every ordered product item into a clean JSON array.
+The user uploads an image which should be a handwritten or printed kirana purchase slip, order slip, invoice, or handwritten parchi (खरीद पर्ची / ऑर्डर पर्ची).
 
-Guidelines:
-1. Product name: Extract clean brand and product title (e.g., 'DailyDrop Assam Tea', 'HomeBright Bath Soap', 'Refined Sunflower Oil', 'Sugar M30', 'Parle-G').
-2. Quantity: Explicit number (e.g., 2, 5, 10, 24).
-3. Quantity unit:
-   - 'CASE' if written: peti, case, carton, box, cs, pti, kis, kaise, पेटी, केस.
-   - 'PIECE' if written: packet, piece, nag, pouch, bottle, dabba, pcs, pkt, पैकेट, पीस, नग, पाउच.
-   - Default to 'PIECE' if unit is ambiguous or omitted.
-4. Pack size hint and unit: e.g. 500 'gm', 1 'L', 250 'gm', 100 'gm' if specified.
+CRITICAL INSTRUCTIONS:
+1. First evaluate whether the image is genuinely a handwritten or printed order slip, receipt, bill, or product list.
+   - If the image is NOT an order slip / parchi (e.g. it is a person, selfie, random object, car, animal, scenic photo, meme, or unrelated document), set "is_parchi": false and "items": [].
+2. If it IS an order slip, extract all product items:
+   - "product_phrase": Clean brand and product title (e.g. 'Assam Tea', 'Refined Sunflower Oil', 'Sugar', 'Parle-G').
+   - "quantity": Number of units (default 1).
+   - "quantity_unit": 'CASE' (if peti, case, carton, box) or 'PIECE' (packet, piece, nag, pouch, bottle).
+   - "pack_size_hint": Numeric weight/volume if mentioned (e.g. 250, 500, 1).
+   - "pack_unit_hint": Unit (e.g. 'gm', 'kg', 'L', 'ml').
 
 Output STRICT JSON with the schema:
 {
+  "is_parchi": true,
   "items": [
     {
       "product_phrase": "Assam Tea",
@@ -432,7 +433,7 @@ Output STRICT JSON with the schema:
       "pack_unit_hint": "gm"
     }
   ],
-  "notes": "Brief transcription summary"
+  "notes": "Summary or explanation"
 }
 """
 
@@ -440,13 +441,18 @@ Output STRICT JSON with the schema:
 def parse_order_slip_image(
     image_bytes: bytes,
     mime_type: str = "image/jpeg",
-) -> list[GroqExtractedItem]:
+) -> tuple[bool, list[GroqExtractedItem], str]:
     """
     Transcribes handwritten or printed kirana purchase slips using Gemini Multimodal Vision.
     Falls back across GEMINI_API_KEY and GEMINI_API_KEY1.
-    If both fail or network is down, returns an intelligent sample fallback for demo reliability.
+    Returns (is_parchi: bool, extracted_items: list[GroqExtractedItem], notes: str).
+    Never injects static fake data when an image is not an order slip.
     """
     keys_to_try = [k for k in [settings.GEMINI_API_KEY, settings.GEMINI_API_KEY1] if k]
+    if not keys_to_try:
+        logger.warning("No Gemini API key available for vision OCR.")
+        return False, [], "Vision API key missing."
+
     b64_data = base64.b64encode(image_bytes).decode("utf-8")
 
     for api_key in keys_to_try:
@@ -467,7 +473,14 @@ def parse_order_slip_image(
                     data = resp.json()
                     content = data["candidates"][0]["content"]["parts"][0]["text"]
                     parsed = json.loads(content)
+                    is_parchi = bool(parsed.get("is_parchi", True))
+                    notes = str(parsed.get("notes", ""))
                     raw_items = parsed.get("items", [])
+
+                    if not is_parchi:
+                        logger.info("Vision model identified image as NOT an order slip / parchi.")
+                        return False, [], notes or "Ye image parchi nahi hai."
+
                     extracted: list[GroqExtractedItem] = []
                     for r in raw_items:
                         try:
@@ -489,41 +502,16 @@ def parse_order_slip_image(
                                 ))
                         except Exception as parse_err:
                             logger.warning(f"Failed to parse item from vision JSON: {parse_err}")
+
                     if extracted:
-                        return extracted
+                        return True, extracted, notes
+                    else:
+                        return False, [], notes or "Parchi me koi items pehchan me nahi aaye."
                 else:
                     logger.warning(f"Gemini Vision API returned {resp.status_code}: {resp.text[:200]}")
         except Exception as exc:
             logger.warning(f"Gemini Vision call failed with key: {exc}")
 
-    # Fallback if Vision API was unreachable
-    logger.info("Using Kirana slip fallback items.")
-    return [
-        GroqExtractedItem(
-            product_phrase="Assam Tea",
-            quantity=2,
-            quantity_unit=QuantityUnit.PIECE,
-            quantity_explicit=True,
-            quantity_unit_explicit=True,
-            pack_size_hint=250,
-            pack_unit_hint="gm",
-        ),
-        GroqExtractedItem(
-            product_phrase="Refined Sunflower Oil",
-            quantity=1,
-            quantity_unit=QuantityUnit.CASE,
-            quantity_explicit=True,
-            quantity_unit_explicit=True,
-            pack_size_hint=1,
-            pack_unit_hint="L",
-        ),
-        GroqExtractedItem(
-            product_phrase="Bath Soap",
-            quantity=4,
-            quantity_unit=QuantityUnit.PIECE,
-            quantity_explicit=True,
-            quantity_unit_explicit=True,
-            pack_size_hint=100,
-            pack_unit_hint="gm",
-        ),
-    ]
+    # No static dummy items! Real error reporting:
+    logger.info("Vision scan failed to detect valid parchi items.")
+    return False, [], "Parchi scan nahi ho saki."

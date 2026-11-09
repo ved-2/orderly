@@ -426,15 +426,35 @@ def clean_retailer_speech_echo(msg: str, active_question: Optional[str] = None) 
         if remaining:
             cleaned = remaining
 
-    # 3. Check if entire message is just assistant echo
+    # 3. Check if entire message is just assistant echo or prompt repetition
+    norm_l = cleaned.lower()
     pure_echo_tokens = {
         "uplabdh", "uplabd", "uplaod", "upload", "उपलब्ध", "लव डे", "लवडे", "love day",
         "kya aapko ye chahiye", "kya aapko yeh chahiye", "क्या आपको यह चाहिए",
         "kitne packet ya case", "kitni bracket ya kaise", "कितनी ब्रैकेट या कैसे",
     }
-    norm_l = cleaned.lower()
     for echo_phrase in pure_echo_tokens:
         if norm_l == echo_phrase or norm_l == f"{echo_phrase}?" or norm_l == f"{echo_phrase} hai":
+            return ""
+
+    # Common spoken echo signatures from assistant questions & note confirmations
+    echo_signatures = [
+        "ऑप्शन चाहिए", "option chahiye", "वेरिएंट का ऑप्शन", "variant ka option",
+        "वेरिएंट का", "variant ka", "पैक का ऑप्शन", "pack ka option",
+        "नोट कर ली है", "note kar li hai", "नोट करली", "note karli",
+        "उपलब्ध है", "uplabdh hai", "upload hai",
+        "kaunse variant", "कौनसे वेरिएंट", "केक ओंस", "केक ऑन", "के कौनसे",
+        "kitne packet ya case", "packet mein ya case mein",
+    ]
+    for sig in echo_signatures:
+        if sig in norm_l:
+            return ""
+
+    if active_question:
+        norm_q = active_question.lower()
+        q_indicator_words = {"chahiye", "kaunse", "konsa", "kaunsi", "variant", "option", "pack", "packet", "uplabdh", "available", "चाहिए", "वेरिएंट", "ऑप्शन", "उपलब्ध", "कौनसे"}
+        shared_indicators = set(re.findall(r"\w+", norm_l)).intersection(q_indicator_words)
+        if len(shared_indicators) >= 2:
             return ""
 
     return cleaned
@@ -899,6 +919,17 @@ class HybridProductMatcher:
             self.inventory_map = {}
             self.prices_map = {}
 
+
+    @property
+    def price_map(self) -> dict:
+        """Accessor providing numeric unit prices by product ID."""
+        if not hasattr(self, "prices_map"):
+            return {}
+        return {
+            pid: float(prec.price) if prec and hasattr(prec, "price") else 0.0
+            for pid, prec in self.prices_map.items()
+        }
+
     def _get_tuples_by_ids(self, ids: list[str]) -> list[Tuple[Product, str, float]]:
         """Retrieve candidate tuples by product IDs."""
         id_set = set(ids)
@@ -967,7 +998,7 @@ class HybridProductMatcher:
             # Attribute Constraint Adjustments
             if pack_size_hint is not None:
                 prod_pack_size = float(prod.pack_size)
-                if prod.pack_unit.lower() in {"kg", "kilo"}:
+                if prod.pack_unit.lower() in {"kg", "kilo", "l", "litre", "liter"}:
                     prod_pack_size *= 1000
 
                 if abs(prod_pack_size - pack_size_hint) < 1.0:
@@ -1122,7 +1153,8 @@ class HybridProductMatcher:
             pending.stage = ClarificationStage.AWAITING_PACKAGE_SIZE
             pending.pack_size_status = AttributeStatus.AMBIGUOUS
             top_name = brand_candidates[0][0].name
-            pending.active_question = f"{matched_brand} {top_name} ke kaunse pack ka option chahiye? {', '.join(brand_sizes[:3])}?"
+            name_disp = top_name if top_name.lower().startswith(matched_brand.lower()) else f"{matched_brand} {top_name}"
+            pending.active_question = f"{name_disp} ke kaunse pack ka option chahiye? {', '.join(brand_sizes[:3])}?"
             return pending
 
         # 4. If only 1 product remains or pack size was specified:
@@ -1139,7 +1171,8 @@ class HybridProductMatcher:
         # If user only said generic term ("chai") without explicit confirmation
         if is_generic and not brand_explicit and not req.quantity_explicit:
             pending.stage = ClarificationStage.AWAITING_QUANTITY
-            pending.active_question = f"Hamare paas {chosen_brand} {chosen_prod.name} ({int(chosen_prod.pack_size)}{chosen_prod.pack_unit}) uplabdh hai. Kya aapko ye chahiye? Kitne packet ya case chahiye?"
+            disp_name = chosen_prod.name if chosen_prod.name.lower().startswith(chosen_brand.lower()) else f"{chosen_brand} {chosen_prod.name}"
+            pending.active_question = f"Hamare paas {disp_name} ({int(chosen_prod.pack_size)}{chosen_prod.pack_unit}) uplabdh hai. Kya aapko ye chahiye? Kitne packet ya case chahiye?"
             return pending
 
         # 5. Check selling unit and quantity
@@ -1331,7 +1364,7 @@ class HybridProductMatcher:
                 if found:
                     p, _ = found
                     sz = float(p.pack_size)
-                    if p.pack_unit.lower() in {"kg", "kilo"}:
+                    if p.pack_unit.lower() in {"kg", "kilo", "l", "litre", "liter"}:
                         sz *= 1000
                     if abs(sz - parsed.pack_size_hint) < 1.0:
                         matching_size_ids.append(pid)

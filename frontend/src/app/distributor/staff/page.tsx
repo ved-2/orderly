@@ -57,6 +57,42 @@ export default function StaffManagementPage() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [modifyingUserId, setModifyingUserId] = useState<string | null>(null);
+
+  const handleRoleChange = async (userId: string, newRole: "ORDER_DESK" | "SALESMAN" | "DISTRIBUTOR_ADMIN") => {
+    try {
+      setModifyingUserId(userId);
+      setError(null);
+      const res = await apiRequest<{ message: string }>(`/distributor/staff/${userId}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: newRole }),
+      });
+      setFeedback(res.message);
+      setTimeout(() => setFeedback(null), 3500);
+      await loadStaff();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update staff role.");
+    } finally {
+      setModifyingUserId(null);
+    }
+  };
+
+  const handleToggleStatus = async (userId: string) => {
+    try {
+      setModifyingUserId(userId);
+      setError(null);
+      const res = await apiRequest<{ message: string }>(`/distributor/staff/${userId}/toggle-status`, {
+        method: "PATCH",
+      });
+      setFeedback(res.message);
+      setTimeout(() => setFeedback(null), 3500);
+      await loadStaff();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to toggle status.");
+    } finally {
+      setModifyingUserId(null);
+    }
+  };
 
   // 1. Authenticate user
   useEffect(() => {
@@ -212,49 +248,48 @@ export default function StaffManagementPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
-      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/distributor"
-              className="text-xs font-semibold uppercase tracking-wider text-[#666864] hover:text-[#242724] transition-colors"
-            >
-              &larr; Control Center
-            </Link>
-            <span className="text-[#E7E6E0]">/</span>
-            <h1 className="text-sm font-bold text-[#242724]">
-              Staff & Salesmen Access Management
-            </h1>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-5">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-[#969892]">
+            <span>Security & Role Administration</span>
+            <span>·</span>
+            <span>Jabalpur FMCG Operations</span>
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowInviteModal(true);
-              setGeneratedLink(null);
-              setError(null);
-            }}
-            className="rounded-[4px] bg-[#79565D] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
-          >
-            + Invite Staff Member
-          </button>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+            Staff & Field Salesmen Management
+          </h1>
+          <p className="mt-0.5 text-xs text-[#666864]">
+            Issue encrypted single-use invitations and manage active access for Order Desk operators and beat salesmen.
+          </p>
         </div>
-      </header>
+
+        <button
+          type="button"
+          onClick={() => {
+            setShowInviteModal(true);
+            setGeneratedLink(null);
+            setError(null);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-[4px] bg-[#79565D] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
+        >
+          + Invite Staff or Salesman
+        </button>
+      </div>
 
       {feedback && (
-        <div className="border-b border-emerald-200 bg-emerald-50 px-6 py-3 text-center text-xs font-medium text-emerald-900">
+        <div className="rounded-[6px] border border-[#BCE2CD] bg-[#F0F9F4] p-3 text-xs text-[#205234]">
           {feedback}
         </div>
       )}
 
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-center text-xs font-medium text-red-900">
+        <div className="rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-3 text-xs text-[#8C2828]">
           {error}
         </div>
       )}
 
-      <div className="mx-auto max-w-7xl px-6 py-8 space-y-8">
+      <div className="space-y-8">
         {/* Active Staff Table */}
         <div className="border border-gray-200 bg-white">
           <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -278,44 +313,103 @@ export default function StaffManagementPage() {
                 <thead className="border-b border-gray-200 bg-gray-50 text-xs font-medium uppercase tracking-wider text-gray-500">
                   <tr>
                     <th className="px-6 py-3">Email Address</th>
-                    <th className="px-6 py-3">Assigned Role</th>
+                    <th className="px-6 py-3">Role & Promotion Control</th>
                     <th className="px-6 py-3">Contact</th>
-                    <th className="px-6 py-3 text-center">Status</th>
-                    <th className="px-6 py-3 text-right">Joined Date</th>
+                    <th className="px-6 py-3 text-center">Account Status</th>
+                    <th className="px-6 py-3 text-right">Quick Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {staffList.map((st) => (
-                    <tr key={st.id} className="hover:bg-gray-50/50">
-                      <td className="px-6 py-3.5 font-medium text-gray-950 text-xs">
-                        {st.email}
-                      </td>
-                      <td className="px-6 py-3.5 text-xs">
-                        <span
-                          className={`border px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                            st.role === "DISTRIBUTOR_ADMIN"
-                              ? "border-purple-300 bg-purple-50 text-purple-900"
-                              : st.role === "ORDER_DESK"
-                              ? "border-blue-300 bg-blue-50 text-blue-900"
-                              : "border-emerald-300 bg-emerald-50 text-emerald-900"
-                          }`}
-                        >
-                          {st.role.replace("_", " ")}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-xs text-gray-600">
-                        {st.phone || "-"}
-                      </td>
-                      <td className="px-6 py-3.5 text-center">
-                        <span className="border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                          Active
-                        </span>
-                      </td>
-                      <td className="px-6 py-3.5 text-right text-xs text-gray-500">
-                        {formatDate(st.created_at)}
-                      </td>
-                    </tr>
-                  ))}
+                  {staffList.map((st) => {
+                    const isSelf = profile?.email === st.email;
+                    const isBusy = modifyingUserId === st.id;
+
+                    return (
+                      <tr key={st.id} className="hover:bg-gray-50/50">
+                        <td className="px-6 py-3.5 font-medium text-gray-950 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span>{st.email}</span>
+                            {isSelf && (
+                              <span className="rounded bg-[#FAF9F6] border border-[#E7E6E0] px-1.5 py-0.5 text-[10px] font-bold text-[#79565D]">
+                                You
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5 text-xs">
+                          {isSelf ? (
+                            <span className="rounded border border-purple-300 bg-purple-50 px-2 py-0.5 text-[11px] font-bold text-purple-900 uppercase">
+                              {st.role.replace("_", " ")}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={st.role}
+                                disabled={isBusy}
+                                onChange={(e) =>
+                                  handleRoleChange(
+                                    st.id,
+                                    e.target.value as "ORDER_DESK" | "SALESMAN" | "DISTRIBUTOR_ADMIN"
+                                  )
+                                }
+                                className="h-7 rounded border border-gray-300 bg-white px-2 text-xs font-medium text-gray-900 focus:border-[#79565D] focus:outline-none"
+                              >
+                                <option value="SALESMAN">Field Salesman</option>
+                                <option value="ORDER_DESK">Order Desk Operator</option>
+                                <option value="DISTRIBUTOR_ADMIN">Distributor Admin</option>
+                              </select>
+                              {isBusy && <span className="text-[10px] text-gray-400">Saving...</span>}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-3.5 text-xs text-gray-600">
+                          {st.phone || "-"}
+                        </td>
+                        <td className="px-6 py-3.5 text-center">
+                          {isSelf ? (
+                            <span className="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                              Active
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatus(st.id)}
+                              disabled={isBusy}
+                              className={`rounded border px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                                st.is_active
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                  : "border-red-300 bg-red-50 text-red-800 hover:bg-red-100"
+                              }`}
+                            >
+                              {st.is_active ? "Active" : "Suspended"}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-6 py-3.5 text-right text-xs">
+                          {!isSelf && st.role === "SALESMAN" && (
+                            <button
+                              type="button"
+                              onClick={() => handleRoleChange(st.id, "ORDER_DESK")}
+                              disabled={isBusy}
+                              className="rounded border border-[#205234] bg-[#EEF6F1] px-2.5 py-1 text-[11px] font-semibold text-[#205234] hover:bg-[#d8eedf] transition-colors"
+                            >
+                              Promote to Order Desk
+                            </button>
+                          )}
+                          {!isSelf && st.role === "ORDER_DESK" && (
+                            <button
+                              type="button"
+                              onClick={() => handleRoleChange(st.id, "SALESMAN")}
+                              disabled={isBusy}
+                              className="rounded border border-[#79565D] bg-[#F4EFF0] px-2.5 py-1 text-[11px] font-semibold text-[#79565D] hover:bg-[#ebdfe2] transition-colors"
+                            >
+                              Move to Field Sales
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -496,6 +590,6 @@ export default function StaffManagementPage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

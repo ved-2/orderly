@@ -120,7 +120,7 @@ def create_brand(
 @router.get("")
 def list_distributor_products(
     search: Optional[str] = Query(None),
-    status_filter: Optional[str] = Query("ALL", regex="^(ALL|ACTIVE|INACTIVE)$"),
+    status_filter: Optional[str] = Query("ALL", pattern="^(ALL|ACTIVE|INACTIVE)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("DISTRIBUTOR_ADMIN", "ORDER_DESK")),
 ):

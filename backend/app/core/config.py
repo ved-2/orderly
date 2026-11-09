@@ -3,10 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str
-    FIREBASE_SERVICE_ACCOUNT_PATH: str
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = "secrets/firebase_service_account.json"
+    FIREBASE_SERVICE_ACCOUNT_JSON: str | None = None
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET: str
+    CORS_ORIGINS: str | None = None
     GROQ_API_KEY: str | None = None
     GROQ_MODEL: str = "qwen/qwen3.8-27b"
     GEMINI_API_KEY: str | None = None

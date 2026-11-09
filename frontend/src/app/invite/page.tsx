@@ -94,6 +94,15 @@ function InvitationAcceptanceContent() {
 
       setSuccessMessage(res.message);
 
+      // Force refresh Firebase token so the newly verified claim is active
+      if (activeUser) {
+        try {
+          await activeUser.getIdToken(true);
+        } catch {
+          // ignore
+        }
+      }
+
       // Step C: Route to appropriate workspace
       setTimeout(() => {
         if (res.role === "ORDER_DESK") {

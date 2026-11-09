@@ -175,12 +175,14 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
   }, []);
 
   // Stop Web Speech synthesis safely
-  const stopSpeaking = useCallback(() => {
+  const stopSpeaking = useCallback((notify = true) => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
       setIsCoolingDown(false);
-      window.dispatchEvent(new CustomEvent("orderly-ai-speaking-end"));
+      if (notify) {
+        window.dispatchEvent(new CustomEvent("orderly-ai-speaking-end"));
+      }
     }
   }, []);
 
@@ -189,7 +191,7 @@ export function AIAssistantProvider({ children }: { children: React.ReactNode })
     (text: string) => {
       if (typeof window === "undefined" || !window.speechSynthesis || !text) return;
 
-      stopSpeaking();
+      stopSpeaking(false);
       // HARDWARE LOCK: signal speech recognition to ABORT immediately and clear audio buffer
       window.dispatchEvent(new CustomEvent("orderly-ai-speaking-start"));
       setIsSpeaking(true);

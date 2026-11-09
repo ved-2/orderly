@@ -24,6 +24,12 @@ class StaffInviteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class UpdateStaffRoleRequest(BaseModel):
+    role: Literal["ORDER_DESK", "SALESMAN", "DISTRIBUTOR_ADMIN"]
+
+    model_config = ConfigDict(extra="forbid")
+
+
 @router.get("")
 def list_staff_and_invitations(
     db: Session = Depends(get_db),
@@ -138,3 +144,70 @@ def revoke_staff_invitation(
     db.commit()
 
     return {"message": "Invitation revoked successfully."}
+
+
+@router.patch("/{user_id}/role")
+def update_staff_role(
+    user_id: UUID,
+    payload: UpdateStaffRoleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("DISTRIBUTOR_ADMIN")),
+):
+    target_user = db.get(User, user_id)
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff user not found.",
+        )
+
+    if target_user.id == current_user.id and payload.role != "DISTRIBUTOR_ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot demote your own administrator account.",
+        )
+
+    old_role = target_user.role
+    target_user.role = payload.role
+    db.commit()
+    db.refresh(target_user)
+
+    return {
+        "id": str(target_user.id),
+        "email": target_user.email,
+        "role": target_user.role,
+        "is_active": target_user.is_active,
+        "message": f"Updated {target_user.email} from {old_role} to {target_user.role}.",
+    }
+
+
+@router.patch("/{user_id}/toggle-status")
+def toggle_staff_active_status(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("DISTRIBUTOR_ADMIN")),
+):
+    target_user = db.get(User, user_id)
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff user not found.",
+        )
+
+    if target_user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate your own administrator account.",
+        )
+
+    target_user.is_active = not target_user.is_active
+    db.commit()
+    db.refresh(target_user)
+
+    status_str = "Active" if target_user.is_active else "Suspended"
+    return {
+        "id": str(target_user.id),
+        "email": target_user.email,
+        "role": target_user.role,
+        "is_active": target_user.is_active,
+        "message": f"Account {target_user.email} is now {status_str}.",
+    }

@@ -49,6 +49,78 @@ from app.modules.users.models import User
 
 logger = logging.getLogger(__name__)
 
+def format_product_display_name(brand: str | None, product_name: str | None) -> str:
+    """Format product display name avoiding brand stutter like 'DailyDrop DailyDrop Sugar'."""
+    p_name = (product_name or "").strip()
+    b_name = (brand or "").strip()
+    if not b_name:
+        return p_name
+    if not p_name:
+        return b_name
+    if p_name.lower().startswith(b_name.lower()):
+        return p_name
+    return f"{b_name} {p_name}"
+
+
+def resolve_retailer_id(
+    db: Session,
+    current_user: User,
+    explicit_retailer_id: str | UUID | None = None,
+) -> UUID:
+    """
+    Resolve target retailer account.
+    If current_user is a RETAILER, return their bound retailer_id.
+    If current_user is staff (SALESMAN, DISTRIBUTOR_ADMIN, ORDER_DESK):
+      - If explicit_retailer_id provided, validate and return.
+      - Else if salesman, find their first assigned retailer from RetailerAssignment.
+      - Else find the first active retailer.
+    """
+    if current_user.role == "RETAILER":
+        ret_id = db.scalar(
+            select(RetailerUser.retailer_id).where(
+                RetailerUser.user_id == current_user.id
+            )
+        )
+        if not ret_id:
+            raise ValueError("No retailer account is linked to this user.")
+        return ret_id
+
+    # Staff user (SALESMAN, ORDER_DESK, DISTRIBUTOR_ADMIN)
+    if explicit_retailer_id:
+        try:
+            target_uuid = UUID(str(explicit_retailer_id))
+            target_ret = db.scalar(
+                select(Retailer.id).where(
+                    Retailer.id == target_uuid,
+                    Retailer.is_active.is_(True),
+                )
+            )
+            if target_ret:
+                return target_ret
+        except (ValueError, TypeError):
+            pass
+
+    # Salesman assigned retailer
+    if current_user.role == "SALESMAN":
+        from app.modules.retailers.models import RetailerAssignment
+        assigned_id = db.scalar(
+            select(RetailerAssignment.retailer_id).where(
+                RetailerAssignment.salesman_id == current_user.id
+            ).limit(1)
+        )
+        if assigned_id:
+            return assigned_id
+
+    # Fallback to any active retailer
+    first_retailer = db.scalar(
+        select(Retailer.id).where(Retailer.is_active.is_(True)).order_by(Retailer.shop_name.asc()).limit(1)
+    )
+    if first_retailer:
+        return first_retailer
+
+    raise ValueError("No active retailer found. Please specify a valid retailer_id.")
+
+
 
 def execute_order_confirmation(
     db: Session,
@@ -145,13 +217,7 @@ def process_assistant_chat(
     cart state synchronization, and order submission.
     """
     # 1. Authorize retailer
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise ValueError("No retailer account is linked to this user.")
+    retailer_id = resolve_retailer_id(db, current_user, getattr(request, "retailer_id", None))
 
     retailer = db.scalar(
         select(Retailer).where(Retailer.id == retailer_id)
@@ -187,7 +253,23 @@ def process_assistant_chat(
     from app.modules.ai_assistant.matcher import clean_retailer_speech_echo
     active_q = session.pending_question or (session.pending_request.active_question if session.pending_request else None)
     clean_msg = clean_retailer_speech_echo(request.message, active_q)
-    user_msg_to_process = clean_msg if clean_msg else request.message
+    if not clean_msg:
+        # Prompt echo detected; do not re-run matching or trigger endless loops
+        reply_txt = active_q if active_q else "Aapka order sunne ke liye taiyar hoon. Product ka naam boliye."
+        return AssistantChatResponse(
+            session_id=session.session_id,
+            reply=reply_txt,
+            audio_text=reply_txt,
+            intent=AssistantIntent.CLARIFY if active_q else AssistantIntent.GREETING,
+            messages=session.messages,
+            suggested_products=[],
+            cart_actions=[],
+            is_order_confirmed=False,
+            created_order_id=None,
+            pending_clarification=active_q,
+            pending_request=session.pending_request,
+        )
+    user_msg_to_process = clean_msg
 
     # Check if user message is an order confirmation, clear, or affirmative add
     norm_msg = user_msg_to_process.lower().strip()
@@ -305,7 +387,7 @@ def process_assistant_chat(
             )
 
             pack_desc = f"{int(pending.pack_size)}{pending.pack_unit}" if pending.pack_size else ""
-            prod_full = f"{pending.brand_name} {pending.product_name}"
+            prod_full = format_product_display_name(pending.brand_name, pending.product_name)
             added_msg = f"Samajh gaya. {prod_full} ({pack_desc}) ke {qty} {unit_label} aapke order draft mein add kar diye."
             clear_pending_request(session)
 
@@ -445,7 +527,8 @@ def process_assistant_chat(
                                 image_url=card.image_url if card else None,
                             )
                         )
-                        added_names.append(f"{pending.brand_name} {pending.product_name} ({qty} {unit_label})")
+                        disp_p = format_product_display_name(pending.brand_name, pending.product_name)
+                        added_names.append(f"{disp_p} ({qty} {unit_label})")
 
                     elif pending.stage != ClarificationStage.CANCELLED:
                         # Queue any remaining items so they aren't lost
@@ -477,17 +560,31 @@ def process_assistant_chat(
                         audio_reply = chat_reply
 
                 elif final_intent == AssistantIntent.QUERY_PRICE_STOCK:
-                    matched = matcher.match_item(search_query)
-                    if matched.status == MatchStatus.MATCHED:
-                        card = matcher.build_product_card(matched.product_id)
+                    # Create pending request for query so follow-up quantities bind to this product
+                    pending = matcher.create_pending_product_request(search_query)
+                    if pending.stage == ClarificationStage.PRODUCT_IDENTIFIED:
+                        pid = pending.confirmed_product_id
+                        card = matcher.build_product_card(pid) if pid else None
                         if card:
                             suggested_cards.append(card)
-                        price_str = f"₹{matched.unit_price:.2f}" if matched.unit_price else "Rate uplabdh nahi"
+                        price_str = f"₹{card.price:.2f}" if card and card.price else "Rate uplabdh nahi"
                         stock_qty = card.quantity_available if card else 0
-                        chat_reply = f"{matched.brand_name} {matched.product_name} ka price {price_str} hai, aur stock {stock_qty} piece available hai."
-                        audio_reply = f"{matched.product_name} ka price {matched.unit_price or 0:.0f} rupaye hai."
+                        disp_p = format_product_display_name(pending.brand_name, pending.product_name)
+                        chat_reply = f"{disp_p} ka price {price_str} hai, aur stock {stock_qty} piece available hai. Kya aapko ye chahiye?"
+                        audio_reply = f"{disp_p} ka price {price_str} hai."
+                        # Keep pending request in session so if user immediately says '50 piece' or '2 case', it confirms this product
+                        set_pending_request(session, pending)
+                    elif pending.stage != ClarificationStage.CANCELLED:
+                        final_intent = AssistantIntent.CLARIFY
+                        set_pending_request(session, pending)
+                        for opt in pending.active_options:
+                            c = matcher.build_product_card(opt.product_id)
+                            if c:
+                                suggested_cards.append(c)
+                        chat_reply = pending.active_question or f"'{search_query}' ke liye option select karein."
+                        audio_reply = chat_reply
                     else:
-                        chat_reply = matched.clarification_question or f"'{search_query}' ki details uplabdh nahi hain."
+                        chat_reply = f"'{search_query}' catalogue me nahi mila. Kripya doosra naam ya brand try karein."
                         audio_reply = chat_reply
 
             if added_names and final_intent == AssistantIntent.ADD_PRODUCT:
@@ -682,6 +779,7 @@ def process_parchi_image(
     current_user: User,
     image_bytes: bytes,
     mime_type: str = "image/jpeg",
+    retailer_id_override: str | UUID | None = None,
 ) -> AssistantChatResponse:
     """
     Multimodal Kirana Parchi / Handwritten Order Slip OCR processing.
@@ -692,17 +790,40 @@ def process_parchi_image(
     from app.modules.ai_assistant.matcher import HybridProductMatcher
     from app.modules.retailers.models import RetailerUser
 
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(RetailerUser.user_id == current_user.id)
-    )
-    if not retailer_id:
-        raise ValueError("No retailer account is linked to this user.")
+    retailer_id = resolve_retailer_id(db, current_user, retailer_id_override)
 
     session = get_or_create_session(str(retailer_id), str(current_user.id))
     matcher = HybridProductMatcher(db, retailer_id)
 
     # 1. Vision OCR Transcription
-    extracted_vision_items = parse_order_slip_image(image_bytes, mime_type)
+    is_parchi, extracted_vision_items, vision_notes = parse_order_slip_image(image_bytes, mime_type)
+
+    # If image is NOT a parchi, return helpful clarification message immediately without altering cart
+    if not is_parchi or not extracted_vision_items:
+        chat_reply = (
+            "⚠️ Ye image kisi kirana parchi ya order slip ki nahi lag rahi hai. "
+            "Kripya handwritten ya printed order slip (पर्ची) ki saaf photo upload karein ya text/voice me bol kar order dein."
+        )
+        audio_reply = "Ye kirana order parchi nahi lag rahi hai. Kripya parchi ki photo upload karein."
+        append_message(
+            session=session,
+            role=AssistantRole.ASSISTANT,
+            content=chat_reply,
+            audio_text=audio_reply,
+            intent=AssistantIntent.CLARIFY,
+            suggested_products=[],
+        )
+        save_session(session)
+        return AssistantChatResponse(
+            session_id=session.session_id,
+            reply=chat_reply,
+            audio_text=audio_reply,
+            intent=AssistantIntent.CLARIFY,
+            messages=session.messages,
+            suggested_products=[],
+            cart_actions=[],
+            is_order_confirmed=False,
+        )
 
     cart_actions: list[CartAction] = []
     suggested_cards: list[ProductCardInfo] = []
@@ -721,8 +842,12 @@ def process_parchi_image(
 
         if scored and scored[0][2] >= 65.0:
             top_prod, top_brand, top_score = scored[0]
-            price = matcher.price_map.get(top_prod.id, 0.0)
-            avail = matcher.inventory_map.get(top_prod.id, 0)
+            price_rec = getattr(matcher, "prices_map", {}).get(top_prod.id)
+            if price_rec and hasattr(price_rec, "price"):
+                price = float(price_rec.price)
+            else:
+                price = float(getattr(matcher, "price_map", {}).get(top_prod.id, 0.0))
+            avail = getattr(matcher, "inventory_map", {}).get(top_prod.id, 0)
 
             unit = item.quantity_unit if isinstance(item.quantity_unit, QuantityUnit) else QuantityUnit.PIECE
             qty = max(1, item.quantity)
@@ -765,7 +890,8 @@ def process_parchi_image(
                 suggested_cards.append(card)
 
             unit_label = "case" if unit == QuantityUnit.CASE else "packet"
-            added_descriptions.append(f"• {top_brand} {top_prod.name} ({qty} {unit_label})")
+            name_disp = top_prod.name if top_prod.name.lower().startswith(top_brand.lower()) else f"{top_brand} {top_prod.name}"
+            added_descriptions.append(f"• {name_disp} ({qty} {unit_label})")
         else:
             pending_items.append(item)
 

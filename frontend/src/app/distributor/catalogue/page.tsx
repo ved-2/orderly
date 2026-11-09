@@ -463,56 +463,54 @@ export default function DistributorCataloguePage() {
   const activeSchemesCount = schemes.filter((s) => s.is_active).length;
 
   return (
-    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
-      {/* Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/distributor"
-              className="text-xs font-semibold tracking-wider uppercase text-[#666864] hover:text-[#242724] transition-colors"
-            >
-              &larr; Administration Console
-            </Link>
-            <span className="text-[#E7E6E0]">/</span>
-            <span className="text-xs font-bold uppercase text-[#242724]">
-              Master Catalogue & Schemes
-            </span>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-5">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-[#969892]">
+            <span>Depot Inventory & Pricing</span>
+            <span>·</span>
+            <span>4 FMCG Master Brands</span>
           </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                if (brands.length > 0 && !newBrandId) setNewBrandId(brands[0].id);
-                setShowAddProductModal(true);
-              }}
-              className="rounded-[4px] bg-[#79565D] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
-            >
-              + Add New Product
-            </button>
-            <button
-              onClick={() => {
-                if (products.length > 0 && !newSchemeProductId) {
-                  setNewSchemeProductId(products[0].id);
-                }
-                const today = new Date();
-                setNewValidFrom(today.toISOString().split("T")[0]);
-                setNewValidTo(
-                  new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-                    .toISOString()
-                    .split("T")[0]
-                );
-                setShowAddSchemeModal(true);
-              }}
-              className="border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50"
-            >
-              + Create Trade Scheme
-            </button>
-          </div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+            Master Wholesale Catalogue & Trade Schemes
+          </h1>
+          <p className="mt-0.5 text-xs text-[#666864]">
+            Configure case rates, warehouse inventory allocations, and Buy-X-Get-Y / slab discount rules.
+          </p>
         </div>
-      </header>
 
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-6">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => {
+              if (brands.length > 0 && !newBrandId) setNewBrandId(brands[0].id);
+              setShowAddProductModal(true);
+            }}
+            className="rounded-[4px] bg-[#79565D] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
+          >
+            + Add New Product
+          </button>
+          <button
+            onClick={() => {
+              if (products.length > 0 && !newSchemeProductId) {
+                setNewSchemeProductId(products[0].id);
+              }
+              const today = new Date();
+              setNewValidFrom(today.toISOString().split("T")[0]);
+              setNewValidTo(
+                new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .split("T")[0]
+              );
+              setShowAddSchemeModal(true);
+            }}
+            className="rounded-[4px] border border-[#E7E6E0] bg-white px-3.5 py-2 text-xs font-semibold text-[#242724] hover:bg-[#FAF9F6] transition-colors shadow-2xs"
+          >
+            + Create Trade Scheme
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-6">
         {/* Banner Feedback */}
         {feedback && (
           <div className="border border-emerald-300 bg-emerald-50 p-3 text-xs font-medium text-emerald-900">
@@ -1376,6 +1374,6 @@ export default function DistributorCataloguePage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

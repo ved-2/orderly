@@ -188,6 +188,7 @@ class AssistantChatRequest(BaseModel):
     mode: str = Field(default="CHAT", description="'CHAT' or 'VOICE'")
     language: str = Field(default="auto", description="'auto', 'hi', 'en', or 'hinglish'")
     cart_snapshot: list[dict[str, Any]] | None = None
+    retailer_id: str | None = None
 
 
 class AssistantChatResponse(BaseModel):
@@ -227,6 +228,7 @@ class DraftItemInput(BaseModel):
     product_id: str
     quantity: int = Field(default=1, ge=1)
     quantity_unit: QuantityUnit = QuantityUnit.PIECE
+    retailer_id: str | None = None
 
 
 class DraftResponse(BaseModel):
@@ -239,6 +241,7 @@ class DraftResponse(BaseModel):
 class OrderConfirmRequest(BaseModel):
     customer_note: str | None = None
     cart_snapshot: list[dict[str, Any]] | None = None
+    retailer_id: str | None = None
 
 
 class OrderConfirmResponse(BaseModel):

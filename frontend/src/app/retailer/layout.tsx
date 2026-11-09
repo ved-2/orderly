@@ -81,6 +81,7 @@ function RetailerLayoutInner({
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [currentHash, setCurrentHash] = useState("");
+  const isAssistantPage = pathname === "/retailer/assistant";
 
   // Sync cart counter
   useEffect(() => {
@@ -195,7 +196,8 @@ function RetailerLayoutInner({
       </header>
 
       {/* Main Container */}
-      <div className="flex min-h-[calc(100vh-56px)] w-full">
+      <div className={`flex w-full ${isAssistantPage ? "h-[calc(100dvh-56px)] overflow-hidden" : "min-h-[calc(100vh-56px)]"}`}>
+
         {/* Desktop Sidebar */}
         <aside className="hidden w-56 shrink-0 border-r border-[#E7E6E0] bg-[#FFFFFF] p-4 md:flex flex-col justify-between sticky top-14 h-[calc(100vh-56px)] overflow-y-auto">
           {/* Main Nav Items */}
@@ -254,7 +256,7 @@ function RetailerLayoutInner({
         </aside>
 
         {/* Dynamic Route Content */}
-        <main className="min-w-0 flex-1 pb-24 md:pb-8">{children}</main>
+        <main className={`min-w-0 flex-1 ${isAssistantPage ? "flex flex-col h-full min-h-0 overflow-hidden pb-[4.5rem] md:pb-0" : "pb-24 md:pb-8"}`}>{children}</main>
       </div>
 
       {/* Global AI Assistant Chat Drawer & Voice Modal */}

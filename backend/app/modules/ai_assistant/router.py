@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from app.modules.ai_assistant.service import (
     execute_order_confirmation,
     process_assistant_chat,
     process_parchi_image,
+    resolve_retailer_id,
 )
 from app.modules.ai_assistant.session_service import (
     add_draft_item,
@@ -37,6 +38,8 @@ from app.modules.users.models import User
 
 router = APIRouter(prefix="/assistant", tags=["AI Ordering Assistant"])
 
+AI_ASSISTANT_ROLES = ("RETAILER", "SALESMAN", "DISTRIBUTOR_ADMIN", "ORDER_DESK")
+
 
 @router.post(
     "/chat",
@@ -46,7 +49,7 @@ router = APIRouter(prefix="/assistant", tags=["AI Ordering Assistant"])
 def assistant_chat(
     request: AssistantChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Multilingual conversational ordering endpoint.
@@ -78,8 +81,9 @@ def assistant_chat(
 )
 async def scan_parchi(
     file: UploadFile = File(...),
+    retailer_id: str | None = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Multimodal Kirana Parchi / Handwritten Order Slip OCR endpoint.
@@ -94,6 +98,7 @@ async def scan_parchi(
             current_user=current_user,
             image_bytes=image_bytes,
             mime_type=mime_type,
+            retailer_id_override=retailer_id,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -113,23 +118,18 @@ async def scan_parchi(
     status_code=status.HTTP_200_OK,
 )
 def get_session(
+    retailer_id: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Retrieve active conversation history and draft state for the authenticated retailer.
     Enables instant state restoration across page refreshes and mode switches.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     return get_or_create_session(
         retailer_id=str(retailer_id),
@@ -143,22 +143,17 @@ def get_session(
     status_code=status.HTTP_200_OK,
 )
 def reset_session(
+    retailer_id: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Clear active dialogue history and reset the assistant session.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     return clear_session(
         retailer_id=str(retailer_id),
@@ -172,22 +167,17 @@ def reset_session(
     status_code=status.HTTP_200_OK,
 )
 def get_draft(
+    retailer_id: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Retrieve current server-authoritative draft items and calculate deterministic total.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     session = get_or_create_session(str(retailer_id), str(current_user.id))
     total_qty = sum(it.quantity for it in session.draft_items)
@@ -208,21 +198,15 @@ def get_draft(
 def add_item_to_draft_endpoint(
     payload: DraftItemInput,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Directly add an item to the server draft with catalog verification.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, payload.retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     try:
         pid = UUID(payload.product_id)
@@ -278,21 +262,15 @@ def add_item_to_draft_endpoint(
 def update_draft_item_endpoint(
     payload: DraftItemInput,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Update quantity of a line item in the server draft.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, payload.retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     session = get_or_create_session(str(retailer_id), str(current_user.id))
     unit_str = payload.quantity_unit.value if hasattr(payload.quantity_unit, "value") else str(payload.quantity_unit)
@@ -320,22 +298,17 @@ def update_draft_item_endpoint(
 def remove_draft_item_endpoint(
     product_id: str,
     quantity_unit: str | None = None,
+    retailer_id: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Remove an item from the server draft.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     session = get_or_create_session(str(retailer_id), str(current_user.id))
     remove_draft_item(session, product_id, quantity_unit)
@@ -355,22 +328,17 @@ def remove_draft_item_endpoint(
     status_code=status.HTTP_200_OK,
 )
 def clear_draft_endpoint(
+    retailer_id: str | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Clear all items from the server draft.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, retailer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     session = get_or_create_session(str(retailer_id), str(current_user.id))
     clear_draft_items(session)
@@ -385,23 +353,17 @@ def clear_draft_endpoint(
 def confirm_order_endpoint(
     request: OrderConfirmRequest = OrderConfirmRequest(),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("RETAILER")),
+    current_user: User = Depends(require_roles(*AI_ASSISTANT_ROLES)),
 ):
     """
     Atomic server-authoritative explicit confirmation of order draft.
     Validates items, checks pricing and active schemes, creates Order with status SUBMITTED,
     sets source to AI_CAPTURE, creates OrderStatusHistory, and clears draft.
     """
-    retailer_id = db.scalar(
-        select(RetailerUser.retailer_id).where(
-            RetailerUser.user_id == current_user.id
-        )
-    )
-    if not retailer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No retailer account is linked to this user.",
-        )
+    try:
+        retailer_id = resolve_retailer_id(db, current_user, getattr(request, "retailer_id", None))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     session = get_or_create_session(str(retailer_id), str(current_user.id))
     

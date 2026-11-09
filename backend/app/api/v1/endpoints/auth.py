@@ -9,8 +9,11 @@ from sqlalchemy import func
 from app.api.deps import (
     get_current_user,
     get_db,
+    get_firebase_identity,
     get_verified_firebase_identity,
 )
+from app.core.firebase import get_firebase_app
+from firebase_admin import auth as fb_admin_auth
 from datetime import datetime, timezone
 import hashlib
 from app.modules.users.models import User, StaffInvitation
@@ -136,7 +139,7 @@ def get_invitation_info(
 @router.post("/invitations/{token}/accept")
 def accept_staff_invitation(
     token: str,
-    identity: dict = Depends(get_verified_firebase_identity),
+    identity: dict = Depends(get_firebase_identity),
     db: Session = Depends(get_db),
 ):
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -198,6 +201,12 @@ def accept_staff_invitation(
     invitation.used_at = now
     db.commit()
     db.refresh(user)
+
+    # Automatically mark account as email_verified in Firebase
+    try:
+        fb_admin_auth.update_user(firebase_uid, email_verified=True, app=get_firebase_app())
+    except Exception as ex:
+        print("Note: Could not update Firebase email_verified:", ex)
 
     return {
         "id": str(user.id),

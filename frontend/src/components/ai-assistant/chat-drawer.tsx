@@ -35,12 +35,16 @@ export function AIAssistantChatDrawer() {
 
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll on new message
+  // Auto-scroll on new message inside drawer only
   useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isOpen && chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
   }, [messages, isOpen, isLoading]);
 
@@ -73,7 +77,7 @@ export function AIAssistantChatDrawer() {
       {/* Drawer Container */}
       <div className="flex h-full w-full max-w-lg flex-col bg-[#F6F5F1] shadow-2xl transition-transform duration-300 sm:border-l sm:border-[#E7E6E0]">
         {/* Drawer Header */}
-        <header className="flex items-center justify-between border-b border-[#E7E6E0] bg-white px-4 py-3 sm:px-6">
+        <header className="shrink-0 flex items-center justify-between border-b border-[#E7E6E0] bg-white px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
             <div className="flex size-9 items-center justify-center rounded-full bg-[linear-gradient(135deg,#79565D,#9C7683)] text-white shadow-sm">
               <Sparkles size={18} />
@@ -142,7 +146,7 @@ export function AIAssistantChatDrawer() {
         </header>
 
         {/* Conversation Message Feed */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 sm:px-6">
+        <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-4 sm:px-6">
           {messages.map((msg) => {
             const isUser = msg.role === "user";
 
@@ -223,7 +227,7 @@ export function AIAssistantChatDrawer() {
         </div>
 
         {/* Quick Suggestion Chips */}
-        <div className="border-t border-[#E7E6E0]/60 bg-white/50 px-4 py-2 sm:px-6">
+        <div className="shrink-0 border-t border-[#E7E6E0]/60 bg-white/50 px-4 py-2 sm:px-6">
           <div className="flex gap-2 overflow-x-auto scrollbar-none">
             {quickPrompts.map((q) => (
               <button
@@ -241,7 +245,7 @@ export function AIAssistantChatDrawer() {
         {/* Input Form */}
         <form
           onSubmit={handleSend}
-          className="border-t border-[#E7E6E0] bg-white p-3 sm:px-6 sm:py-4"
+          className="shrink-0 border-t border-[#E7E6E0] bg-white p-3 sm:px-6 sm:py-4"
         >
           <div className="relative flex items-center">
             <input

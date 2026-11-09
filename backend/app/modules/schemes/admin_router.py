@@ -39,7 +39,7 @@ class SchemeCreateRequest(BaseModel):
 
 @router.get("")
 def list_schemes(
-    status_filter: Optional[str] = Query("ALL", regex="^(ALL|ACTIVE|INACTIVE)$"),
+    status_filter: Optional[str] = Query("ALL", pattern="^(ALL|ACTIVE|INACTIVE)$"),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("DISTRIBUTOR_ADMIN")),

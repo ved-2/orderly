@@ -119,7 +119,7 @@ export default function NotFound() {
       {/* Footer */}
       <footer className="border-t border-[#E7E6E0] bg-white py-4 px-4 sm:px-6">
         <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#969892]">
-          <span>© {new Date().getFullYear()} Orderly Technologies Pvt. Ltd. · Jabalpur Operations</span>
+          <span>© 2026 Orderly Technologies Pvt. Ltd. · Jabalpur Operations</span>
           <span>Kirana B2B Wholesale Commerce</span>
         </div>
       </footer>

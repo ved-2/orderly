@@ -254,7 +254,7 @@ export default function Home() {
         <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-[#666864]">
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 text-center sm:text-left">
             <span className="font-semibold text-[#242724]">
-              © {new Date().getFullYear()} Orderly Commerce Engine
+              © 2026 Orderly Commerce Engine
             </span>
             <span className="hidden sm:inline text-[#D5D3CB]">·</span>
             <span>Jabalpur Operations & B2B Depot OS</span>

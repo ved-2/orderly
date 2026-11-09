@@ -200,43 +200,39 @@ export default function TallyExportPage() {
   const totalValue = items.reduce((acc, row) => acc + row.amount, 0);
 
   return (
-    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/distributor"
-              className="text-xs font-semibold uppercase tracking-wider text-[#666864] hover:text-[#242724] transition-colors"
-            >
-              &larr; Control Center
-            </Link>
-            <span className="text-[#E7E6E0]">/</span>
-            <h1 className="text-sm font-bold text-[#242724]">
-              Tally Accounting Export
-            </h1>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-5">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-[#969892]">
+            <span>ERP Accounting Integration</span>
+            <span>·</span>
+            <span>Tally Prime / ERP 9 Schemas</span>
           </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleDownloadCsv}
-              disabled={downloading || items.length === 0}
-              className="border border-emerald-700 bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-40"
-            >
-              {downloading ? "Generating CSV..." : "Download Tally CSV"}
-            </button>
-          </div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+            Tally Sales Voucher Export
+          </h1>
+          <p className="mt-0.5 text-xs text-[#666864]">
+            Export approved dispatches and billed orders into Tally multi-line sales vouchers with itemized GST.
+          </p>
         </div>
-      </header>
+
+        <button
+          type="button"
+          onClick={handleDownloadCsv}
+          disabled={downloading || items.length === 0}
+          className="inline-flex items-center gap-2 rounded-[4px] bg-[#1E4B72] px-4 py-2 text-xs font-semibold text-white hover:bg-[#183c5c] transition-colors disabled:opacity-40 shadow-2xs"
+        >
+          {downloading ? "Generating CSV..." : "Download Tally CSV"}
+        </button>
+      </div>
 
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-center text-xs font-medium text-red-900">
+        <div className="rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-3 text-xs text-[#8C2828]">
           {error}
         </div>
       )}
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div>
         {/* Filter Controls */}
         <div className="border border-gray-200 bg-white p-5 mb-6">
           <div className="grid gap-4 sm:grid-cols-4 items-end">
@@ -444,6 +440,6 @@ export default function TallyExportPage() {
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

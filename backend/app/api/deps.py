@@ -65,13 +65,6 @@ def get_current_user(
             detail="Invalid authentication token.",
         )
 
-    # Require verified email for both Email/Password and Google accounts.
-    if not decoded_token.get("email_verified", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email before accessing Orderly.",
-        )
-
     user = db.scalar(
         select(User).where(User.firebase_uid == firebase_uid)
     )
@@ -82,6 +75,14 @@ def get_current_user(
             detail="User is not registered in Orderly.",
         )
 
+    # Require verified email for public accounts, but staff accounts authorized by distributor invite do not require external email click
+    if user.role not in ["DISTRIBUTOR_ADMIN", "ORDER_DESK", "SALESMAN"]:
+        if not decoded_token.get("email_verified", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Please verify your email before accessing Orderly.",
+            )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -89,6 +90,53 @@ def get_current_user(
         )
 
     return user
+
+
+def get_firebase_identity(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
+    """
+    Verify Firebase identity without requiring email_verified.
+    Used for staff invitation acceptance where the cryptographic token validates the email.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication scheme.",
+        )
+
+    try:
+        decoded_token = auth.verify_id_token(
+            credentials.credentials,
+            app=get_firebase_app(),
+            check_revoked=True,
+        )
+    except (FirebaseError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+        )
+
+    firebase_uid = decoded_token.get("uid")
+    email = decoded_token.get("email")
+
+    if not firebase_uid or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Firebase account must have a valid email address.",
+        )
+
+    return {
+        "firebase_uid": firebase_uid,
+        "email": email.strip().lower(),
+    }
 
 
 def get_verified_firebase_identity(

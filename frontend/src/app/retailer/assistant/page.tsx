@@ -24,6 +24,9 @@ import {
   Sparkles,
   Trash2,
   User,
+  X,
+  Eye,
+  Maximize2,
 } from "lucide-react";
 import { useAIAssistant } from "@/contexts/ai-assistant-context";
 import { AssistantProductCard } from "@/components/ai-assistant/product-card";
@@ -69,6 +72,9 @@ export default function RetailerAssistantPage() {
   const [cartCount, setCartCount] = useState(0);
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [mobileTab, setMobileTab] = useState<"chat" | "draft">("chat");
+  const [parchiPreviewUrl, setParchiPreviewUrl] = useState<string | null>(null);
+  const [parchiFileName, setParchiFileName] = useState<string | null>(null);
+  const [fullImageModal, setFullImageModal] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const speechRecognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,11 +83,31 @@ export default function RetailerAssistantPage() {
     document.title = "Kirana AI Assistant & Parchi Scanner | Orderly";
   }, []);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      scanParchi(file);
-      e.target.value = "";
+      const preview = URL.createObjectURL(file);
+      setParchiPreviewUrl(preview);
+      setParchiFileName(file.name);
+      try {
+        if (typeof scanParchi === "function") {
+          await scanParchi(file);
+        } else {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/v1/assistant/scan-parchi", {
+            method: "POST",
+            body: formData,
+          });
+          if (res.ok) {
+            window.location.reload();
+          }
+        }
+      } catch (err) {
+        console.error("Scan parchi error:", err);
+      } finally {
+        e.target.value = "";
+      }
     }
   };
 
@@ -163,6 +189,7 @@ export default function RetailerAssistantPage() {
   const [confirmationNotice, setConfirmationNotice] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Synchronize cart state
@@ -184,9 +211,14 @@ export default function RetailerAssistantPage() {
     };
   }, []);
 
-  // Auto-scroll chat to latest message
+  // Auto-scroll chat to latest message smoothly inside the chat container ONLY
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   }, [messages, isLoading]);
 
   // Focus input on mount
@@ -236,9 +268,9 @@ export default function RetailerAssistantPage() {
   ];
 
   return (
-    <div className="flex h-[calc(100vh-56px)] w-full flex-col bg-[#F6F5F1] text-[#242724]">
+    <div className="flex h-full w-full flex-col bg-[#F6F5F1] text-[#242724] overflow-hidden">
       {/* Top Banner & Control Bar */}
-      <header className="border-b border-[#E7E6E0] bg-white px-4 py-3 sm:px-6">
+      <header className="shrink-0 border-b border-[#E7E6E0] bg-white px-4 py-3 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-lg bg-[linear-gradient(135deg,#79565D,#9C7683)] text-white shadow-2xs">
@@ -328,7 +360,7 @@ export default function RetailerAssistantPage() {
           }`}
         >
           {/* Messages Scroll Area */}
-          <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
+          <div ref={chatContainerRef} className="flex-1 min-h-0 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
             {/* Conversation Messages */}
             {messages.map((msg, idx) => {
               const isUser = msg.role === "user";
@@ -449,7 +481,7 @@ export default function RetailerAssistantPage() {
           </div>
 
           {/* Quick Prompts Bar */}
-          <div className="border-t border-[#E7E6E0] bg-[#FFFFFF] px-4 py-2">
+          <div className="shrink-0 border-t border-[#E7E6E0] bg-[#FFFFFF] px-4 py-2">
             <div className="flex items-center gap-2 overflow-x-auto text-xs">
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#969892]">
                 Quick Prompts:
@@ -468,10 +500,70 @@ export default function RetailerAssistantPage() {
             </div>
           </div>
 
+
+          {/* Uploaded Kirana Parchi Preview Banner */}
+          {parchiPreviewUrl && (
+            <div className="shrink-0 border-t border-[#79565D]/20 bg-[#F4EFF0] px-4 py-2.5 sm:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    onClick={() => setFullImageModal(parchiPreviewUrl)}
+                    className="group relative size-14 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-[#79565D]/30 bg-white shadow-xs"
+                    title="Click to zoom handwritten order slip"
+                  >
+                    <img
+                      src={parchiPreviewUrl}
+                      alt="Uploaded Parchi"
+                      className="size-full object-cover transition-transform group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Maximize2 size={16} className="text-white drop-shadow" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#242724]">
+                        📸 Scanned Parchi Slip
+                      </span>
+                      <span className="rounded-full bg-[#4E8962]/10 px-2 py-0.5 text-[10px] font-semibold text-[#4E8962]">
+                        Gemini Vision AI
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-[#666864] truncate max-w-[200px] sm:max-w-md">
+                      {parchiFileName || "kirana_order_slip.jpg"} · Tap image to inspect full photo
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFullImageModal(parchiPreviewUrl)}
+                    className="flex items-center gap-1 rounded-md border border-[#E7E6E0] bg-white px-2 py-1 text-[11px] font-medium text-[#666864] hover:bg-[#F6F5F1] hover:text-[#242724]"
+                  >
+                    <Eye size={12} />
+                    <span>View</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setParchiPreviewUrl(null);
+                      setParchiFileName(null);
+                    }}
+                    className="flex size-7 items-center justify-center rounded-full text-[#969892] hover:bg-[#E7E6E0] hover:text-[#242724]"
+                    title="Dismiss preview"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Chat Text Input Bar */}
           <form
             onSubmit={handleSend}
-            className="border-t border-[#E7E6E0] bg-white p-3 sm:p-4"
+            className="shrink-0 border-t border-[#E7E6E0] bg-white p-3 sm:p-4"
           >
             <div className="flex items-center gap-2 rounded-xl border border-[#E7E6E0] bg-[#F6F5F1] px-3 py-2 transition-all focus-within:border-[#79565D] focus-within:bg-white focus-within:shadow-2xs">
               <input
@@ -531,12 +623,12 @@ export default function RetailerAssistantPage() {
 
         {/* Right Side: Server-Authoritative Live Order Draft & Confirmation Panel */}
         <aside
-          className={`w-full shrink-0 flex-col bg-white lg:flex lg:w-96 xl:w-[420px] ${
+          className={`w-full shrink-0 min-h-0 flex-col bg-white lg:flex lg:w-96 xl:w-[420px] ${
             mobileTab === "draft" ? "flex" : "hidden lg:flex"
           }`}
         >
           {/* Draft Panel Header */}
-          <header className="border-b border-[#E7E6E0] bg-white px-4 py-3 sm:px-5">
+          <header className="shrink-0 border-b border-[#E7E6E0] bg-white px-4 py-3 sm:px-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart size={17} className="text-[#79565D]" />
@@ -606,7 +698,7 @@ export default function RetailerAssistantPage() {
           )}
 
           {/* Draft Items List */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5">
             {cartItems.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center p-6 text-center text-[#969892]">
                 <div className="flex size-14 items-center justify-center rounded-full bg-[#F6F5F1] text-[#79565D]/50 mb-3">
@@ -736,7 +828,7 @@ export default function RetailerAssistantPage() {
 
           {/* Draft Financial Summary & Explicit Confirmation */}
           {cartItems.length > 0 && (
-            <footer className="border-t border-[#E7E6E0] bg-[#FFFFFF] p-4 sm:p-5">
+            <footer className="shrink-0 border-t border-[#E7E6E0] bg-[#FFFFFF] p-4 sm:p-5">
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between text-[#666864]">
                   <span>Subtotal ({cartCount} items)</span>
@@ -786,6 +878,43 @@ export default function RetailerAssistantPage() {
           )}
         </aside>
       </div>
+
+      {/* Full Resolution Parchi Zoom Modal */}
+      {fullImageModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs"
+          onClick={() => setFullImageModal(null)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-2xl overflow-hidden rounded-2xl bg-white p-3 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between border-b border-[#E7E6E0] pb-2">
+              <div className="flex items-center gap-2">
+                <Camera size={16} className="text-[#79565D]" />
+                <h3 className="text-xs font-bold text-[#242724]">
+                  Uploaded Order Slip Preview
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFullImageModal(null)}
+                className="flex size-7 items-center justify-center rounded-full text-[#666864] hover:bg-[#F0EFEA] hover:text-[#242724]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="max-h-[75vh] overflow-auto rounded-lg bg-[#242724]/5">
+              <img
+                src={fullImageModal}
+                alt="Parchi Full View"
+                className="h-auto w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

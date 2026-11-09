@@ -212,3 +212,16 @@ def test_process_assistant_chat_multi_turn_clarification():
     assert resp3.cart_actions[0].quantity == 2
     assert resp3.cart_actions[0].quantity_unit == QuantityUnit.CASE
     assert "Red Label" in resp3.reply
+
+
+def test_clean_retailer_speech_echo_and_loop_prevention():
+    from app.modules.ai_assistant.matcher import clean_retailer_speech_echo
+
+    # 1. Echo of assistant question in Hindi should be stripped to empty
+    echo_msg = "डेली ड्रॉप केक ओंस वेरिएंट का ऑप्शन चाहिए डेली ड्रॉप असेंबली डेली ड्रॉप शुगर"
+    cleaned = clean_retailer_speech_echo(echo_msg, "DailyDrop ke kaunse variant ka option chahiye?")
+    assert cleaned == ""
+
+    # 2. Valid user reply answering an option should NOT be stripped
+    user_reply = "Red Label"
+    assert clean_retailer_speech_echo(user_reply, "Kaunsi brand chahiye? Red Label ya DailyDrop?") == "Red Label"

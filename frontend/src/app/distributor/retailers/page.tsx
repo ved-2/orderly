@@ -312,53 +312,50 @@ export default function RetailersAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F6F5F1] text-[#242724]">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b border-[#E7E6E0] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/distributor"
-              className="text-xs font-semibold uppercase tracking-wider text-[#666864] hover:text-[#242724] transition-colors"
-            >
-              &larr; Control Center
-            </Link>
-            <span className="text-[#E7E6E0]">/</span>
-            <h1 className="text-sm font-bold text-[#242724]">
-              Retailer Network & Credit
-            </h1>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E7E6E0] pb-5">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-[#969892]">
+            <span>Commercial Accounts</span>
+            <span>·</span>
+            <span>Kirana Network</span>
           </div>
-
-          <div className="flex items-center gap-4">
-            <span className="border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
-              {total} Total Kiranas
-            </span>
-            <button
-              type="button"
-              onClick={() => loadRetailers(offset, statusFilter, searchTerm)}
-              disabled={loading}
-              className="border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#242724]">
+            Retailer Network & Credit Limits
+          </h1>
+          <p className="mt-0.5 text-xs text-[#666864]">
+            Verify incoming registrations, sanction credit terms, and monitor outstanding ledgers.
+          </p>
         </div>
-      </header>
 
-      {/* Feedback Banner */}
+        <div className="flex items-center gap-3">
+          <span className="rounded-[4px] border border-[#E7E6E0] bg-white px-3 py-1.5 text-xs font-bold text-[#242724] shadow-2xs">
+            {total} Registered Stores
+          </span>
+          <button
+            type="button"
+            onClick={() => loadRetailers(offset, statusFilter, searchTerm)}
+            disabled={loading}
+            className="rounded-[4px] bg-[#242724] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-black transition-colors disabled:opacity-50 shadow-2xs"
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </div>
+
       {feedback && (
-        <div className="border-b border-emerald-200 bg-emerald-50 px-6 py-3 text-center text-xs font-medium text-emerald-900">
+        <div className="rounded-[6px] border border-[#BCE2CD] bg-[#F0F9F4] p-3 text-xs text-[#205234]">
           {feedback}
         </div>
       )}
 
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-3 text-center text-xs font-medium text-red-900">
+        <div className="rounded-[6px] border border-[#EDBCBC] bg-[#FBF0F0] p-3 text-xs text-[#8C2828]">
           {error}
         </div>
       )}
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div>
         {/* Filter Bar & Search */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-1 border border-gray-200 bg-white p-1">
@@ -799,6 +796,6 @@ export default function RetailersAdminPage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }
