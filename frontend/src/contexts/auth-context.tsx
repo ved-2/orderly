@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -32,12 +31,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       setLoading(false);
+      if (typeof document !== "undefined") {
+        if (firebaseUser) {
+          document.cookie = "orderly_logged_in=true; path=/; max-age=604800; SameSite=Lax";
+        } else {
+          document.cookie = "orderly_logged_in=; path=/; max-age=0; SameSite=Lax";
+        }
+      }
     });
 
     return unsubscribe;
   }, []);
 
   const logout = async () => {
+    if (typeof document !== "undefined") {
+      document.cookie = "orderly_logged_in=; path=/; max-age=0; SameSite=Lax";
+    }
     await signOut(auth);
   };
 

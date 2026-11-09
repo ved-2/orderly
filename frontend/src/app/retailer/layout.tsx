@@ -74,12 +74,13 @@ function RetailerLayoutInner({
 }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const { openAssistant, isOpen: isAIOpen } = useAIAssistant();
 
   const [cartCount, setCartCount] = useState(0);
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [currentHash, setCurrentHash] = useState("");
   const isAssistantPage = pathname === "/retailer/assistant";
 
@@ -108,18 +109,28 @@ function RetailerLayoutInner({
 
   // Load user profile
   useEffect(() => {
-    let active = true;
-    if (user) {
-      apiRequest<UserProfile>("/auth/me")
-        .then((p) => {
-          if (active) setProfile(p);
-        })
-        .catch(() => {});
+    if (authLoading) return;
+    if (!user) {
+      setProfileLoading(false);
+      return;
     }
+
+    let active = true;
+    apiRequest<UserProfile>("/auth/me")
+      .then((p) => {
+        if (active) setProfile(p);
+      })
+      .catch((err) => {
+        console.error("Failed to load retailer profile:", err);
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false);
+      });
+
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   const handleLogout = async () => {
     await logout();
@@ -140,6 +151,51 @@ function RetailerLayoutInner({
       })
     );
   };
+
+  if (authLoading || profileLoading) {
+    return (
+      <div className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-[6px] border border-[#E7E6E0] bg-white p-6 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 animate-pulse rounded-[4px] bg-[#E7E6E0]" />
+            <div className="space-y-1.5 flex-1">
+              <div className="h-3 w-32 animate-pulse rounded bg-[#E7E6E0]" />
+              <div className="h-2.5 w-44 animate-pulse rounded bg-[#E7E6E0]" />
+            </div>
+          </div>
+          <p className="mt-4 text-[11px] text-[#969892]">
+            Connecting to Kirana Retailer Portal...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#F6F5F1] flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-[6px] border border-[#E7E6E0] bg-white p-6 text-center shadow-2xs space-y-4">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-[4px] bg-[#F4EFF0] text-[#79565D]">
+            <Store size={20} />
+          </div>
+          <h1 className="text-base font-bold text-[#242724]">
+            Kirana Retailer Portal
+          </h1>
+          <p className="text-xs text-[#666864] leading-relaxed">
+            Please sign in with your Kirana Store account to access wholesale distributor pricing, trade schemes, and order placement.
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/register"
+              className="inline-block rounded-[4px] bg-[#79565D] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#67474E] transition-colors shadow-2xs"
+            >
+              Sign In with Kirana Account
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full bg-[#F6F5F1] text-[#242724]">
@@ -225,8 +281,6 @@ function RetailerLayoutInner({
                   </Link>
                 );
               })}
-
-
             </nav>
           </div>
 
